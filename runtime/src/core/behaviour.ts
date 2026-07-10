@@ -1,17 +1,37 @@
 import { Entity } from "./entity";
-import type { Widget } from "./widget";
+import type { View } from "./view";
 
-export class UIEvent extends Entity {
-  protected _dom: HTMLElement;
+export interface EventMap {
+  click: MouseEvent,
+  dbclick: MouseEvent,
+  pointerdown: PointerEvent,
+  pointerup: PointerEvent,
+  pointermove: PointerEvent,
+  keydown: KeyboardEvent,
+  keyup: KeyboardEvent,
+  focus: FocusEvent,
+  blur: FocusEvent
+}
 
-  constructor(dom: HTMLElement) {
+export type BehaviourHandler<K extends keyof EventMap, T extends HTMLElement> = (this: T, event: EventMap[K]) => void;
+
+export abstract class Behaviour extends Entity {
+  public readonly events: Map<keyof EventMap, EventListener> = new Map();
+
+  constructor() {
     super();
-
-    this._dom = dom;
   }
 
-  public synchronize(widget: Widget) {
+  protected addEvent<K extends keyof EventMap, T extends HTMLElement>(
+    type: K, handler: BehaviourHandler<K, T>
+  ): void {
+    this.events.set(type, handler as EventListener);
+  }
 
+  public attach(view: View<HTMLElement>) {
+    this.events.forEach((handler, type) => {
+      view.dom.addEventListener(type, handler);
+    })
   }
 
 }
