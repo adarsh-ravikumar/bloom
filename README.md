@@ -20,15 +20,6 @@ The initial implementation is written in TypeScript and serves as the reference 
 - Widget-based
 - Runtime-driven
 - Protocol-oriented
-- Platform-native
-
-## Roadmap
-
-- [ ] Widget system
-- [ ] Behaviors
-- [ ] Event routing
-- [ ] State synchronization
-- [ ] Protocol
 
 ## License
 
