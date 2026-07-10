@@ -1,18 +1,22 @@
 import { TextView } from "./view";
 import { State } from "@/core/state";
-import { StatefulWidget } from "@/core/stateful_widget";
+import { Widget } from "@/core/widget";
 
-export class Text extends StatefulWidget {
+export class Text extends Widget<TextView, null> {
   private readonly state: State<string> = new State("");
 
   public isInline: boolean = false;
 
-  constructor(value: string) {
+  constructor(value?: string) {
     super(TextView);
 
-    this.value = value;
+    this.value = value ? value : "";
 
-    this.state.subscribe(this);
+    this.dependsOn(this.state);
+  }
+
+  public override compose(): void {
+    return;
   }
 
   public get value(): string {
@@ -21,9 +25,5 @@ export class Text extends StatefulWidget {
 
   public set value(val: string) {
     this.state.value = val;
-  }
-
-  public build(): TextView {
-    return this.view!;
   }
 }

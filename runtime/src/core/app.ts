@@ -1,10 +1,10 @@
 import { Container } from "@/widgets/container";
 import { Registry } from "./registry";
-import type { Widget } from "./widget";
+import type { GenericWidget } from "./widget";
 
 export class App {
   public appName: string;
-  public widgets: Registry<Widget> = new Registry();
+  public widgets: Registry<GenericWidget> = new Registry();
 
   public root!: Container;
 
@@ -12,18 +12,23 @@ export class App {
     this.appName = appName;
   }
 
-  public populateWidgetRegistry(children: Widget[]): void {
+  public populateWidgetRegistry(...children: GenericWidget[]): void {
     children.forEach((child) => {
       this.widgets.register(child);
-      this.populateWidgetRegistry(child.children);
+      this.populateWidgetRegistry(...child.children);
     })
   }
 
 
-  public build(root: Container): void {
+  public mount(root: Container): void {
     this.root = root;
 
-    this.populateWidgetRegistry(root.children);
-    document.body.appendChild(this.root.build().dom);
+    this.populateWidgetRegistry(root);
+
+    this.root.mount();
+
+    document.body.appendChild(this.root.dom);
+
+    this.root.update();
   }
 }

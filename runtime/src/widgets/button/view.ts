@@ -1,3 +1,4 @@
+import "./style.scss";
 import { View } from "@/core/view";
 
 export class ButtonView extends View<HTMLButtonElement> {

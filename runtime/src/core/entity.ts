@@ -17,6 +17,6 @@ export class EntityID {
 }
 
 export abstract class Entity {
-  public isRegistered: boolean = false;
-  public id: EntityID = EntityID.generate();
+  protected isRegistered: boolean = false;
+  protected id: EntityID = EntityID.generate();
 }

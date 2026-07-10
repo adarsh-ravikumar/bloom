@@ -1,4 +1,4 @@
-import type { Widget } from "./widget";
+import type { GenericWidget } from "./widget";
 
 export abstract class View<T extends HTMLElement> {
   protected _dom!: T;
@@ -7,14 +7,14 @@ export abstract class View<T extends HTMLElement> {
     this._dom = document.createElement(tagname) as T;
   }
 
-  public synchronize(widget: Widget): void {
-    widget.children.forEach((child) => {
-      this.dom.appendChild(child.build().dom);
-    })
-  }
+  public synchronize(widget: GenericWidget): void { };
 
   public get dom(): T {
     return this._dom;
+  }
+
+  public get classList(): DOMTokenList {
+    return this._dom.classList;
   }
 }
 
