@@ -1,14 +1,10 @@
-import { Widget } from "@/core/widget";
+import { Widget, type GenericWidget } from "@/core/widget";
 import { ContainerView } from "./view";
 
-export class Container extends Widget {
-  constructor(...children: Widget[]) {
-    super(ContainerView, ...children);
+export type ContainerChild = GenericWidget;
 
-    this.update();
-  }
-
-  public build(): ContainerView {
-    return this.view!;
+export class Container extends Widget<ContainerView, null> {
+  constructor() {
+    super(ContainerView, null);
   }
 }

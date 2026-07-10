@@ -1,31 +1,13 @@
+import "./style/global.scss"
+
 import { App } from "./core/app";
-import { StatefulWidget } from "./core/stateful_widget";
-import { Button, ButtonView } from "./widgets/button";
 import { Container } from "./widgets/container";
-import { Text } from "./widgets/text";
+import { Counter } from "./widgets/counter";
 
-const app = new App("Pane");
+const app = new App("Bloom");
 
-class Counter extends StatefulWidget {
-  count: number = 0;
-  text: Text;
-  button: Button;
+const root = new Container();
+root.compose(new Counter());
 
-  constructor() {
-    super();
+app.mount(root);
 
-    this.text = new Text(`Count: ${this.count}`);
-    this.button = new Button(this.text);
-  }
-
-  public build(): ButtonView {
-    return this.button.build();
-  }
-}
-
-app.build(
-  new Container(
-    new Text("Hello, world!"),
-    new Counter()
-  )
-)
