@@ -1,0 +1,13 @@
+@mixin typography() {
+  --font-family-ui: system-ui, sans-serif;
+  --font-family-code: ui-monospace, "SF Mono", "Menlo", "Consolas", monospace;
+
+  --font-size-small: 11px;
+  --font-size-ui: 13px;
+  --font-size-title: 13px;
+  --font-size-code: 12px;
+
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-bold: 600;
+}

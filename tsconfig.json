@@ -1,0 +1,56 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "ESNext",
+    "lib": [
+      "ES2023",
+      "DOM"
+    ],
+    "types": [
+      "bun",
+      "vite/client",
+      "node"
+    ],
+    "allowArbitraryExtensions": true,
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "experimentalDecorators": true,
+    "baseUrl": ".",
+    "paths": {
+      "@client/*": [
+        "bloom/client/*"
+      ],
+      "@core/*": [
+        "bloom/client/core/*"
+      ],
+      "@widgets/*": [
+        "bloom/client/widgets/*"
+      ],
+      "@style/*": [
+        "bloom/client/style/*"
+      ],
+      "@registry/*": [
+        "bloom/client/registry/*"
+      ],
+      "@serialization/*": [
+        "bloom/client/serialization/*"
+      ],
+      "@transport/*": [
+        "bloom/client/transport/*"
+      ],
+      "@app/*": [
+        "src/*"
+      ]
+    }
+  },
+  "include": [
+    "**/*.ts"
+  ]
+}

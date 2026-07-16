@@ -1,0 +1,47 @@
+@use "@style/mixins/palette" as *;
+@use "@style/mixins/typography" as *;
+@use "@style/mixins/layout" as *;
+@use "@style/mixins/spacing" as *;
+@use "@style/mixins/controls" as *;
+@use "@style/mixins/motion" as *;
+
+.theme-light {
+  @include palette(
+    $background:       #ECECEC,
+
+    $surface:          #F7F7F7,
+    $surface-raised:   #FFFFFF,
+    $surface-hover:    #F0F0F0,
+    $surface-active:   #E7E7E7,
+
+    $border:           #C8C8C8,
+    $border-subtle:    #D9D9D9,
+    $border-subtler:   #E8E8E8,
+
+    $foreground:       #222222,
+    $foreground-muted: #555555,
+    $foreground-faint: #888888,
+
+    $primary:          #CE6F4D,
+    $primary-hover:    #D88062,
+    $primary-active:   #B7496D,
+
+    $success:          #3D9857,
+    $warning:          #C79A2F,
+    $error:            #C55C53,
+
+    $selection: rgba(#CE6F4D, .16),
+
+    $bevel-light:      #FFFFFF,
+    $bevel-mid-light:  #F4F4F4,
+
+    $bevel-dark:       #8F8F8F,
+    $bevel-mid-dark:   #B8B8B8,
+  );
+
+  @include typography();
+  @include layout();
+  @include spacing();
+  @include controls();
+  @include motion();
+}

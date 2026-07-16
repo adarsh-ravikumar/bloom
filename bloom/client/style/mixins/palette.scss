@@ -1,0 +1,60 @@
+@mixin palette(
+  $background,
+  $surface,
+  $surface-raised,
+  $surface-hover,
+  $surface-active,
+
+  $border,
+  $border-subtle,
+  $border-subtler,
+
+  $foreground,
+  $foreground-muted,
+  $foreground-faint,
+
+  $primary,
+  $primary-hover,
+  $primary-active,
+
+  $success,
+  $warning,
+  $error,
+
+  $selection,
+
+  $bevel-light,
+  $bevel-mid-light,
+  $bevel-dark,
+  $bevel-mid-dark
+) {
+  --background: #{$background};
+
+  --surface: #{$surface};
+  --surface-raised: #{$surface-raised};
+  --surface-hover: #{$surface-hover};
+  --surface-active: #{$surface-active};
+
+  --border: #{$border};
+  --border-subtle: #{$border-subtle};
+  --border-subtler: #{$border-subtler};
+
+  --foreground: #{$foreground};
+  --foreground-muted: #{$foreground-muted};
+  --foreground-faint: #{$foreground-faint};
+
+  --primary: #{$primary};
+  --primary-hover: #{$primary-hover};
+  --primary-active: #{$primary-active};
+
+  --success: #{$success};
+  --warning: #{$warning};
+  --error: #{$error};
+
+  --selection: #{$selection};
+
+  --bevel-light: #{$bevel-light};
+  --bevel-mid-light: #{$bevel-mid-light};
+  --bevel-dark: #{$bevel-dark};
+  --bevel-mid-dark: #{$bevel-mid-dark};
+}

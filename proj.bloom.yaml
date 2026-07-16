@@ -1,0 +1,8 @@
+bloom:
+  version: '0.1.0'
+
+widgets:
+  builtin:
+    - bloom/client/widgets
+  user:
+    - src/widgets

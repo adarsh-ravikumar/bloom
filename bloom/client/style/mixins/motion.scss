@@ -1,0 +1,8 @@
+@mixin motion() {
+
+  --transition-fast: 60ms;
+  --transition-normal: 90ms;
+  --transition-slow: 140ms;
+
+  --ease-standard: ease;
+}

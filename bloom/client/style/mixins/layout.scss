@@ -1,0 +1,9 @@
+@mixin layout() {
+
+  --menu-bar-height: 24px;
+  --title-bar-height: 22px;
+  --tab-bar-height: 24px;
+  --status-bar-height: 22px;
+
+  --window-padding: var(--space-3);
+}
