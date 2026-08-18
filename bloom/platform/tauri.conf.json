@@ -1,0 +1,38 @@
+{
+  "$schema": "../../sandbox/app/node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "bloom-platform",
+  "version": "0.1.0",
+  "identifier": "com.bloom.dev",
+  "build": {
+    "frontendDist": "../../../dist",
+    "devUrl": "http://127.0.0.1:3141"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Bloom App",
+        "width": 800,
+        "height": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "create": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "dmg",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

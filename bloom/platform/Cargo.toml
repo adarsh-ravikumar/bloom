@@ -1,0 +1,22 @@
+[package]
+name = "bloom-platform"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+
+[lib]
+name = "bloom_platform"
+path = "src/lib.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+bloom-host = { path = "../host" }
+bloom-logger = { path = "../logger" }
+tauri = { version = "2.11.3", features = [] }
+tauri-plugin-log = "2"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"

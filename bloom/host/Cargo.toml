@@ -1,0 +1,11 @@
+[package]
+name = "bloom-host"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "bloom_host"
+path = "src/lib.rs"
+
+[dependencies]
+tauri = { version = "2.11.3", features = [] }

@@ -3,14 +3,14 @@
 [x] Readme
 [x] License
 [x] .gitignore
-[ ] First commit
-[ ] Setup github
-[ ] Setup project structure
-[ ] Setup svelte app
-[ ] Setup tauri app
-[ ] Setup bloom host
-[ ] Write a simple dev script
-[ ] Setup client (py)
+[x] First commit
+[x] Setup github
+[x] Setup project structure
+[x] Setup svelte app
+[x] Setup tauri app
+[x] Setup bloom host
+[x] Write a simple dev script
+[x] Setup client (py)
 
 ## Protocol
 

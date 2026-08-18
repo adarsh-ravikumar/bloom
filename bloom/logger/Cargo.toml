@@ -1,0 +1,8 @@
+[package]
+name = "bloom-logger"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "bloom_logger"
+path = "src/lib.rs"
