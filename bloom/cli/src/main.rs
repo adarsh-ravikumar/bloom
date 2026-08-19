@@ -11,7 +11,6 @@ fn main() {
 
     match command.as_deref() {
         Some("dev") => {
-            println!("Starting Bloom in development mode...");
             let _ = dev();
         }
 

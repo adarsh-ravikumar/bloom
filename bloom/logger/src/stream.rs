@@ -18,6 +18,11 @@ pub const BLOOM_STREAM: StreamConfig = StreamConfig {
     color: Style::MAGENTA,
 };
 
+pub const BLOOM_DEV_STREAM: StreamConfig = StreamConfig {
+    label: "bloom(dev)",
+    color: Style::CYAN,
+};
+
 pub const VITE_STREAM: StreamConfig = StreamConfig {
     label: "vite",
     color: Style::YELLOW,

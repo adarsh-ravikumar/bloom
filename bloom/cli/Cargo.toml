@@ -6,3 +6,7 @@ edition = "2024"
 [dependencies]
 bloom-platform = { path = "../platform" }
 bloom-logger = { path = "../logger" }
+
+notify = "8.2.0"
+notify-debouncer-mini = "0.7.0"
+glob = "0.3.4"

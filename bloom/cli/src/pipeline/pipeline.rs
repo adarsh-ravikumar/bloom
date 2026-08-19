@@ -1,34 +1,11 @@
-use std::process::{Child, Command, Stdio};
+use std::sync::mpsc::{Receiver, channel};
 use std::time::Duration;
+
+use crate::pipeline::watch;
+use crate::pipeline::{Process, ProcessCommand};
 
 type Action = Box<dyn Fn() -> Result<(), ()> + Send>;
 type Shutdown = Box<dyn Fn(i32) + Send>;
-
-pub struct Process {
-    cmd: String,
-    args: Vec<String>,
-    process: Option<Child>,
-    stream: bloom_logger::StreamConfig,
-    should_terminate_on_death: bool,
-}
-
-impl Process {
-    pub fn new(
-        cmd: impl Into<String>,
-        args: impl IntoIterator<Item = impl Into<String>>,
-        stream: bloom_logger::StreamConfig,
-        should_terminate_on_death: bool,
-    ) -> Self {
-        Process {
-            cmd: cmd.into(),
-            args: args.into_iter().map(Into::into).collect::<Vec<String>>(),
-            process: None,
-            stream,
-            should_terminate_on_death,
-        }
-    }
-}
-
 pub struct Pipeline {
     processes: Vec<Process>,
     actions: Vec<Action>,
@@ -50,8 +27,19 @@ impl Pipeline {
         self.actions.push(action);
     }
 
-    pub fn monitor(mut processes: Vec<Process>, shutdown_handler: Shutdown) -> Result<(), ()> {
+    pub fn monitor(
+        mut processes: Vec<Process>,
+        rx: Receiver<ProcessCommand>,
+        shutdown_handler: Shutdown,
+    ) -> Result<(), ()> {
         loop {
+            while let Ok(command) = rx.try_recv() {
+                match command {
+                    ProcessCommand::Restart(index) => {
+                        processes[index].restart()?;
+                    }
+                }
+            }
             let mut should_kill = false;
 
             for process in &mut processes {
@@ -66,8 +54,8 @@ impl Pipeline {
 
             if should_kill {
                 Self::kill_all_processes(processes)?;
-                let _ = shutdown_handler(0);
-                std::process::exit(1);
+                let _ = shutdown_handler(1);
+                unreachable!();
             }
 
             std::thread::sleep(Duration::from_millis(100));
@@ -89,33 +77,27 @@ impl Pipeline {
     }
 
     pub fn start(mut self, shutdown_handler: Shutdown) -> Result<(), ()> {
-        for process in &mut self.processes {
-            let mut child = Command::new(&process.cmd)
-                .args(&process.args)
-                .env("FORCE_COLOR", "1")
-                .stdout(Stdio::piped())
-                .spawn()
-                .map_err(|_| ())?;
+        let (tx, rx) = channel();
 
-            let stdout = child.stdout.take();
+        for index in 0..self.processes.len() {
+            let process = self.processes.get_mut(index).unwrap();
 
-            if let Some(stdout) = stdout {
-                let stream = process.stream;
-                bloom_logger::spawn_log_stream(stream, bloom_logger::ProcessStream::Stdout(stdout));
+            process.spawn()?;
+
+            if let Some(path) = process.restart_on_path_change.clone() {
+                std::thread::spawn({
+                    let tx = tx.clone();
+                    move || {
+                        let _ = watch(path, move || {
+                            tx.send(ProcessCommand::Restart(index)).ok();
+                        });
+                    }
+                });
             }
-
-            let stderr = child.stderr.take();
-
-            if let Some(stderr) = stderr {
-                let stream = process.stream;
-                bloom_logger::spawn_log_stream(stream, bloom_logger::ProcessStream::Stderr(stderr));
-            }
-
-            process.process = Some(child);
         }
 
         std::thread::spawn(move || {
-            let _ = Self::monitor(self.processes, shutdown_handler);
+            let _ = Self::monitor(self.processes, rx, shutdown_handler);
         });
 
         for action in &mut self.actions {

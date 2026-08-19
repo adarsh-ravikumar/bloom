@@ -9,3 +9,4 @@ path = "src/lib.rs"
 
 [dependencies]
 tauri = { version = "2.11.3", features = [] }
+bloom-logger = { path = "../logger" }

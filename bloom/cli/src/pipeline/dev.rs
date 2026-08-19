@@ -22,6 +22,7 @@ pub fn dev() -> Result<(), ()> {
         ],
         bloom_logger::VITE_STREAM,
         true,
+        None,
     ));
 
     pipeline.push_process(Process::new(
@@ -29,7 +30,13 @@ pub fn dev() -> Result<(), ()> {
         vec![""],
         bloom_logger::CLIENT_STREAM,
         false,
+        Some("./client/py/src".into()),
     ));
+
+    bloom_logger::log(
+        bloom_logger::BLOOM_DEV_STREAM,
+        "Starting Bloom in development mode...",
+    );
 
     run_tauri(pipeline, port);
 

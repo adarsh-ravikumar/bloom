@@ -1,5 +1,8 @@
+mod server;
 use tauri;
 
+use crate::server::start_server;
+
 pub fn run(_handle: tauri::AppHandle) {
-    println!("Starting host");
+    let _ = start_server();
 }
