@@ -4,7 +4,9 @@ use std::time::Duration;
 use crate::pipeline::watch;
 use crate::pipeline::{Process, ProcessCommand};
 
-type Action = Box<dyn Fn() -> Result<(), ()> + Send>;
+use bloom_api::BloomError;
+
+type Action = Box<dyn Fn() -> Result<(), BloomError> + Send>;
 type Shutdown = Box<dyn Fn(i32) + Send>;
 pub struct Pipeline {
     processes: Vec<Process>,
@@ -31,7 +33,7 @@ impl Pipeline {
         mut processes: Vec<Process>,
         rx: Receiver<ProcessCommand>,
         shutdown_handler: Shutdown,
-    ) -> Result<(), ()> {
+    ) -> Result<(), BloomError> {
         loop {
             while let Ok(command) = rx.try_recv() {
                 match command {
@@ -47,7 +49,11 @@ impl Pipeline {
                     continue;
                 };
 
-                if child.try_wait().map_err(|_| ())?.is_some() {
+                if child
+                    .try_wait()
+                    .map_err(|_| BloomError::WaitOnChildFailed)?
+                    .is_some()
+                {
                     should_kill = process.should_terminate_on_death;
                 }
             }
@@ -62,13 +68,17 @@ impl Pipeline {
         }
     }
 
-    pub fn kill_all_processes(mut processes: Vec<Process>) -> Result<(), ()> {
+    pub fn kill_all_processes(mut processes: Vec<Process>) -> Result<(), BloomError> {
         for process in &mut processes {
             let Some(child) = &mut process.process else {
                 continue;
             };
 
-            if child.try_wait().map_err(|_| ())?.is_none() {
+            if child
+                .try_wait()
+                .map_err(|_| BloomError::WaitOnChildFailed)?
+                .is_none()
+            {
                 let _ = child.kill();
             }
         }
@@ -76,7 +86,7 @@ impl Pipeline {
         Ok(())
     }
 
-    pub fn start(mut self, shutdown_handler: Shutdown) -> Result<(), ()> {
+    pub fn start(mut self, shutdown_handler: Shutdown) -> Result<(), BloomError> {
         let (tx, rx) = channel();
 
         for index in 0..self.processes.len() {
@@ -84,7 +94,8 @@ impl Pipeline {
 
             process.spawn()?;
 
-            if let Some(path) = process.restart_on_path_change.clone() {
+            for path in process.watch_paths.iter() {
+                let path = path.clone();
                 std::thread::spawn({
                     let tx = tx.clone();
                     move || {
@@ -101,7 +112,7 @@ impl Pipeline {
         });
 
         for action in &mut self.actions {
-            let _ = action().map_err(|_| ())?;
+            let _ = action()?;
         }
 
         Ok(())

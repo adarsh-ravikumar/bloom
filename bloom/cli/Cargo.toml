@@ -4,8 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+bloom-api = { path = "../api" }
 bloom-platform = { path = "../platform" }
 bloom-logger = { path = "../logger" }
+
+serde = "1.0.229"
 
 notify = "8.2.0"
 notify-debouncer-mini = "0.7.0"

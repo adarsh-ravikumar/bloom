@@ -8,5 +8,7 @@ name = "bloom_host"
 path = "src/lib.rs"
 
 [dependencies]
-tauri = { version = "2.11.3", features = [] }
+bloom-api = { path = "../api" }
 bloom-logger = { path = "../logger" }
+
+tauri = { version = "2.11.3", features = [] }

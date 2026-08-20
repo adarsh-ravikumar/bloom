@@ -1,40 +1,39 @@
+use bloom_api::BloomError;
+
 use crate::{
     pipeline::{Pipeline, Process},
     utils::{find_available_port, run_tauri},
 };
 
-pub fn dev() -> Result<(), ()> {
+pub fn dev() -> Result<(), BloomError> {
     let mut pipeline = Pipeline::new();
 
-    let port = find_available_port(3141).ok_or(())?;
+    let port = find_available_port(3141)?;
+
+    let project = bloom_api::ProjectConfig::load()?;
+
+    let mut args = project.dev.frontend.args.clone();
+    args.push("--port".into());
+    args.push(format!("{port}"));
 
     pipeline.push_process(Process::new(
-        "bun",
-        [
-            "--cwd",
-            "./app",
-            "dev",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            &port.to_string(),
-            "--strictPort",
-        ],
-        bloom_logger::VITE_STREAM,
+        project.dev.frontend.command,
+        args,
+        bloom_logger::FRONTEND_STREAM,
         true,
-        None,
+        project.dev.frontend.watch,
     ));
 
     pipeline.push_process(Process::new(
-        "./client/run.sh",
-        vec![""],
+        project.dev.client.command,
+        project.dev.client.args,
         bloom_logger::CLIENT_STREAM,
         false,
-        Some("./client/py/src".into()),
+        project.dev.client.watch,
     ));
 
     bloom_logger::log(
-        bloom_logger::BLOOM_DEV_STREAM,
+        bloom_logger::DEV_STREAM,
         "Starting Bloom in development mode...",
     );
 

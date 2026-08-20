@@ -20,14 +20,14 @@ pub fn watch(path: impl Into<String>, restart: impl Fn()) -> notify::Result<()> 
         .watch(path, RecursiveMode::Recursive)
         .map_err(|e| {
             bloom_logger::log(
-                bloom_logger::BLOOM_DEV_STREAM,
+                bloom_logger::DEV_STREAM,
                 format!("Failed to watch {:?}: {e}", path),
             );
             e
         })?;
 
     bloom_logger::log(
-        bloom_logger::BLOOM_DEV_STREAM,
+        bloom_logger::DEV_STREAM,
         format!("Watching {:?} for changes...", path),
     );
 
@@ -36,7 +36,7 @@ pub fn watch(path: impl Into<String>, restart: impl Fn()) -> notify::Result<()> 
             Ok(Ok(_)) => {
                 restart();
 
-                bloom_logger::log(bloom_logger::BLOOM_DEV_STREAM, "Restarted Process");
+                bloom_logger::log(bloom_logger::DEV_STREAM, "Restarted Process");
             }
 
             Ok(Err(e)) => {

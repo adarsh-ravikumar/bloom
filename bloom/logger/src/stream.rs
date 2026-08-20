@@ -13,18 +13,18 @@ pub struct StreamConfig {
     pub color: &'static str,
 }
 
-pub const BLOOM_STREAM: StreamConfig = StreamConfig {
-    label: "bloom(host)",
+pub const HOST_STREAM: StreamConfig = StreamConfig {
+    label: "host",
     color: Style::MAGENTA,
 };
 
-pub const BLOOM_DEV_STREAM: StreamConfig = StreamConfig {
-    label: "bloom(dev)",
+pub const DEV_STREAM: StreamConfig = StreamConfig {
+    label: "dev",
     color: Style::CYAN,
 };
 
-pub const VITE_STREAM: StreamConfig = StreamConfig {
-    label: "vite",
+pub const FRONTEND_STREAM: StreamConfig = StreamConfig {
+    label: "frontend",
     color: Style::YELLOW,
 };
 
@@ -34,6 +34,6 @@ pub const TAURI_STREAM: StreamConfig = StreamConfig {
 };
 
 pub const CLIENT_STREAM: StreamConfig = StreamConfig {
-    label: "bloom(client)",
+    label: "client",
     color: Style::BLUE,
 };

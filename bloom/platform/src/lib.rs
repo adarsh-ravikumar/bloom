@@ -1,3 +1,4 @@
+use bloom_api::BloomError;
 use bloom_host;
 use bloom_logger::TAURI_STREAM;
 use std::net::TcpStream;
@@ -7,12 +8,22 @@ use tauri_plugin_log::fern;
 
 type Shutdown = Box<dyn Fn(i32) + Send>;
 
-fn wait_until_server_starts(port: u16) {
+fn wait_until_server_starts(
+    port: u16,
+    total_attempts: u32,
+    attempt_cooldown_ms: u64,
+) -> Result<(), BloomError> {
     let address = format!("127.0.0.1:{port}").parse().unwrap();
 
-    while TcpStream::connect_timeout(&address, Duration::from_millis(200)).is_err() {
-        thread::sleep(Duration::from_millis(200));
+    for _ in 0..total_attempts {
+        if TcpStream::connect_timeout(&address, Duration::from_millis(200)).is_ok() {
+            return Ok(());
+        }
+
+        thread::sleep(Duration::from_millis(attempt_cooldown_ms));
     }
+
+    Err(BloomError::ConnectToFrontendFailed)
 }
 
 pub fn run(port: u16, start_pipeline: impl FnOnce(Shutdown) + Send + 'static) {
@@ -37,17 +48,24 @@ pub fn run(port: u16, start_pipeline: impl FnOnce(Shutdown) + Send + 'static) {
                 )?;
             }
 
+            // start the host
+            std::thread::spawn(move || {
+                bloom_host::run(host_handle);
+            });
+
+            // run the pipeline
             let shutdown_handle = app.handle().clone();
             start_pipeline(Box::new(move |code: i32| {
                 shutdown_handle.exit(code);
             }));
 
-            bloom_host::run(host_handle);
+            if wait_until_server_starts(port, 20, 200).is_err() {
+                bloom_logger::log(TAURI_STREAM, "Failed to connect to the frontend. Recheck the host and port configuration on your bundler.");
+                app.handle().exit(1);
+            }
 
-            wait_until_server_starts(port);
-
+            // build the window
             let url = format!("http://127.0.0.1:{port}").parse().unwrap();
-
             tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::External(url))
                 .build()?;
 

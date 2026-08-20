@@ -4,7 +4,7 @@ mod style;
 
 pub use logger::{log, spawn_log_stream};
 pub use stream::{
-    BLOOM_DEV_STREAM, BLOOM_STREAM, CLIENT_STREAM, ProcessStream, StreamConfig, TAURI_STREAM,
-    VITE_STREAM,
+    CLIENT_STREAM, DEV_STREAM, FRONTEND_STREAM, HOST_STREAM, ProcessStream, StreamConfig,
+    TAURI_STREAM,
 };
 pub use style::Style;

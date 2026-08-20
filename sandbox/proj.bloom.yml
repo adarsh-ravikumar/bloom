@@ -1,0 +1,25 @@
+# All paths are relative to this file's directory.
+# This file MUST be located alongside the Bloom executable.
+
+project:
+  name: "my-app"
+
+bloom:
+  version: "0.1.0"
+  min_client_version: "0.1.0"
+
+dev:
+  frontend:
+    command: "bun"
+    args:
+      - "--cwd"
+      - "./app"
+      - "dev"
+      - "--host"
+      - "127.0.0.1"
+
+  client:
+    command: "./client/run.sh"
+    args: []
+    watch:
+      - "./client/py/src"

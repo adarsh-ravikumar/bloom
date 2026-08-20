@@ -1,0 +1,13 @@
+[package]
+name = "bloom-api"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "bloom_api"
+path = "src/lib.rs"
+
+[dependencies]
+serde = "1.0.229"
+yaml_serde = "0.10.7"
+semver = { version = "1.0", features = ["serde"] }

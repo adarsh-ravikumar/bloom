@@ -18,6 +18,4 @@ padding = b"\0"
 
 connection_packet = version + client_id + app_name + padding
 
-print(len(connection_packet))
-
-sock.send(b"Hello, World!")
+sock.send(connection_packet)

@@ -12,8 +12,10 @@ path = "src/lib.rs"
 tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
+bloom-api = { path = "../api" }
 bloom-host = { path = "../host" }
 bloom-logger = { path = "../logger" }
+
 tauri = { version = "2.11.3", features = [] }
 tauri-plugin-log = "2"
 
