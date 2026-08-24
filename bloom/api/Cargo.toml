@@ -10,4 +10,6 @@ path = "src/lib.rs"
 [dependencies]
 serde = "1.0.229"
 yaml_serde = "0.10.7"
+serde_json = "1.0.151"
+
 semver = { version = "1.0", features = ["serde"] }

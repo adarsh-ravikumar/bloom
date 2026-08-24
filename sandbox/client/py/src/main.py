@@ -1,7 +1,7 @@
 import socket
 
 sock = socket.create_connection(("127.0.0.1", 31415))
-print("Connected!")
+print("Connected!", flush=True)
 
 # Connection Request Packet -> 44 bytes
 # : Client Version -> [major, minor, patch] 3 bytes
@@ -19,3 +19,12 @@ padding = b"\0"
 connection_packet = version + client_id + app_name + padding
 
 sock.send(connection_packet)
+
+while True:
+    msg_len_bytes = sock.recv(4)
+    # msg now holds packet length
+    msg_len = int.from_bytes(msg_len_bytes, byteorder="big")
+    print(f"Recieveing packet of size: {msg_len}")
+
+    packet = sock.recv(msg_len)
+    print("Packet: {packet}")

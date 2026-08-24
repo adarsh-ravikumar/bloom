@@ -10,5 +10,3 @@ path = "src/lib.rs"
 [dependencies]
 bloom-api = { path = "../api" }
 bloom-logger = { path = "../logger" }
-
-tauri = { version = "2.11.3", features = [] }

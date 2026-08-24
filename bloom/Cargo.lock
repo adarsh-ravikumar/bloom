@@ -178,6 +178,7 @@ version = "0.1.0"
 dependencies = [
  "semver",
  "serde",
+ "serde_json",
  "yaml_serde",
 ]
 
@@ -187,7 +188,6 @@ version = "0.1.0"
 dependencies = [
  "bloom-api",
  "bloom-logger",
- "tauri",
 ]
 
 [[package]]
