@@ -1,1 +1,1 @@
-python3 client/py/src/main.py
+exec python3 client/py/src/main.py

@@ -25,7 +25,7 @@ impl Pipeline {
         self.processes.push(process);
     }
 
-    pub fn push_action(&mut self, action: Action) {
+    pub fn _push_action(&mut self, action: Action) {
         self.actions.push(action);
     }
 
@@ -68,7 +68,9 @@ impl Pipeline {
         }
     }
 
-    pub fn kill_all_processes(mut processes: Vec<Process>) -> Result<(), BloomError> {
+    pub fn kill_all_processes(
+        mut processes: Vec<Process>,
+    ) -> Result<(), BloomError> {
         for process in &mut processes {
             let Some(child) = &mut process.process else {
                 continue;
@@ -86,7 +88,10 @@ impl Pipeline {
         Ok(())
     }
 
-    pub fn start(mut self, shutdown_handler: Shutdown) -> Result<(), BloomError> {
+    pub fn start(
+        mut self,
+        shutdown_handler: Shutdown,
+    ) -> Result<(), BloomError> {
         let (tx, rx) = channel();
 
         for index in 0..self.processes.len() {

@@ -1,24 +1,26 @@
-use std::sync::mpsc::{Receiver, Sender, channel};
+use crossbeam_channel::{Receiver, Sender};
 
-use crate::{BloomCommand, BloomEvent};
+use crate::{BloomCommand, BloomConnection, BloomEvent};
 
-pub struct Channel<T> {
-    pub tx: Sender<T>,
-    pub rx: Receiver<T>,
+pub type CommandTx = Sender<BloomCommand>;
+pub type CommandRx = Receiver<BloomCommand>;
+
+pub type EventTx = Sender<BloomEvent>;
+pub type EventRx = Receiver<BloomEvent>;
+
+#[derive(Clone)]
+pub enum ClientEvent {
+    Connected(BloomConnection),
+    Disconnected,
 }
 
-impl<T> Channel<T> {
-    pub fn new() -> Self {
-        let (tx, rx) = channel();
-        Channel { tx, rx }
-    }
+pub enum FrontendEvent {
+    Connected,
+    Disconnected,
 }
 
-pub type InboundChannel = Channel<BloomCommand>;
-pub type OutboundChannel = Channel<BloomEvent>;
+pub type ClientTx = Sender<ClientEvent>;
+pub type ClientRx = Receiver<ClientEvent>;
 
-pub type InboundTX = Sender<BloomCommand>;
-pub type InboundRX = Receiver<BloomCommand>;
-
-pub type OutboundTX = Sender<BloomEvent>;
-pub type OutboundRX = Receiver<BloomEvent>;
+pub type FrontendTx = Sender<FrontendEvent>;
+pub type FrontendRx = Receiver<FrontendEvent>;

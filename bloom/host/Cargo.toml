@@ -10,3 +10,4 @@ path = "src/lib.rs"
 [dependencies]
 bloom-api = { path = "../api" }
 bloom-logger = { path = "../logger" }
+crossbeam-channel = "0.5"

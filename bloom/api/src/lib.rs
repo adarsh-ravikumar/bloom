@@ -5,7 +5,10 @@ mod message;
 mod packet;
 mod project;
 
-pub use channel::{InboundChannel, InboundRX, InboundTX, OutboundChannel, OutboundRX, OutboundTX};
+pub use channel::{
+    ClientEvent, ClientRx, ClientTx, CommandRx, CommandTx, EventRx, EventTx,
+    FrontendEvent, FrontendRx, FrontendTx,
+};
 pub use connnection::BloomConnection;
 pub use error::BloomError;
 pub use message::{BloomCommand, BloomEvent};

@@ -176,6 +176,7 @@ dependencies = [
 name = "bloom-api"
 version = "0.1.0"
 dependencies = [
+ "crossbeam-channel",
  "semver",
  "serde",
  "serde_json",
@@ -188,6 +189,7 @@ version = "0.1.0"
 dependencies = [
  "bloom-api",
  "bloom-logger",
+ "crossbeam-channel",
 ]
 
 [[package]]
@@ -201,6 +203,7 @@ dependencies = [
  "bloom-api",
  "bloom-host",
  "bloom-logger",
+ "crossbeam-channel",
  "log",
  "serde",
  "serde_json",

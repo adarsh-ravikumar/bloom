@@ -18,6 +18,7 @@ pub enum BloomError {
     TcpAcceptFailed = 305,
     TcpStreamCloneFailed = 306,
     TcpReadFailed = 307,
+    TcpWriteFailed = 308,
 
     // Protocol
     PacketTooLarge = 400,
@@ -28,4 +29,8 @@ pub enum BloomError {
     AppNameTooLong = 405,
     InvalidPacket = 406,
     InvalidMessageUse = 407,
+    ClientConnectionFailed = 408,
+    FailedToObtainClientStream = 409,
+    FailedToObtainClientDisconnectChannel = 410,
+    ClientDisconnected = 411,
 }

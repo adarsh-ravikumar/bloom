@@ -1,7 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
 
   let clientVersion: number[] = $state([0, 0, 0]);
   let clientID: string = $state("");
@@ -9,8 +9,10 @@
 
   let clientInfoRecieved: bool = $state(false);
 
+  let count: number = $state(0);
+
   onMount(async () => {
-    await listen("client-connected", (event) => {
+    await listen("client_connected", (event) => {
       console.log("receieved client connection packet");
       console.log(event);
       clientInfoRecieved = true;
@@ -19,12 +21,16 @@
       appName = event.payload.app_name;
     });
 
-    await invoke("emit_event", {
-      event: {
-        event: "connected",
-        payload: {},
-      },
+    await listen("increment", (event) => {
+      console.log("increment!");
+      count++;
     });
+
+    await invoke("frontend_connected");
+  });
+
+  onDestroy(async () => {
+    await invoke("frontend_disconnected");
   });
 
   const handleClick = async () => {
@@ -46,4 +52,27 @@
   </div>
 {/if}
 
-<button onclick={async () => await handleClick()}>Click!</button>
+<button onclick={async () => await handleClick()}>Count: {count}</button>
+
+<style>
+  button {
+    background: black;
+    padding: 1rem;
+    font-size: 2rem;
+    color: white;
+    border-radius: 0.5rem;
+    border: none;
+    cursor: pointer;
+
+    transition: 200ms ease;
+    scale: 100%;
+
+    &:hover {
+      scale: 105%;
+    }
+
+    &:active {
+      scale: 95%;
+    }
+  }
+</style>

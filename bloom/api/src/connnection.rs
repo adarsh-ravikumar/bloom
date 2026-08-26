@@ -1,3 +1,6 @@
+use crossbeam_channel::Sender;
+use std::net::TcpStream;
+
 use crate::{BloomCommand, BloomError, Packet};
 
 pub struct BloomConnection {
@@ -6,9 +9,11 @@ pub struct BloomConnection {
     // : ID ->             8 bytes (8 random characters)
     // : App name       -> 32 bytes [UTF-8 encoded string, NUL-padded]
     // : NUL-Padding    -> 1 byte
-    client_ver: (u8, u8, u8),
-    client_id: String,
-    app_name: String,
+    pub client_ver: (u8, u8, u8),
+    pub client_id: String,
+    pub app_name: String,
+    pub stream: Option<TcpStream>,
+    pub disconnect_tx: Option<Sender<bool>>,
 }
 
 impl Packet for BloomConnection {
@@ -21,7 +26,8 @@ impl Packet for BloomConnection {
         let minor_ver = bytes[1];
         let patch_ver = bytes[2];
 
-        let id = str::from_utf8(&bytes[3..11]).map_err(|_| BloomError::InvalidClientId)?;
+        let id = str::from_utf8(&bytes[3..11])
+            .map_err(|_| BloomError::InvalidClientId)?;
 
         let app_name_bytes = &bytes[11..43];
         let app_name_end = app_name_bytes
@@ -40,6 +46,8 @@ impl Packet for BloomConnection {
             client_ver: (major_ver, minor_ver, patch_ver),
             client_id: id.into(),
             app_name: app_name.into(),
+            stream: None,
+            disconnect_tx: None,
         })
     }
 
@@ -78,6 +86,17 @@ impl Packet for BloomConnection {
 }
 
 impl BloomConnection {
+    pub fn new(
+        packet_bytes: Vec<u8>,
+        stream: TcpStream,
+        disconnect_tx: Sender<bool>,
+    ) -> Result<Self, BloomError> {
+        let mut packet = BloomConnection::from_bytes(packet_bytes)?;
+        packet.stream = Some(stream);
+        packet.disconnect_tx = Some(disconnect_tx);
+        Ok(packet)
+    }
+
     pub fn into_command(&self) -> Result<BloomCommand, BloomError> {
         let data = serde_json::json!({
             "client_ver": self.client_ver,
@@ -86,9 +105,25 @@ impl BloomConnection {
         });
 
         Ok(BloomCommand {
-            command: "client-connected".into(),
-            panel_id: 0,
+            command: "client_connected".into(),
             data,
         })
+    }
+}
+
+impl Clone for BloomConnection {
+    fn clone(&self) -> Self {
+        let stream = match &self.stream {
+            Some(s) => Some(s.try_clone().unwrap()),
+            None => None,
+        };
+
+        Self {
+            client_ver: self.client_ver,
+            client_id: self.client_id.clone(),
+            app_name: self.app_name.clone(),
+            stream,
+            disconnect_tx: self.disconnect_tx.clone(),
+        }
     }
 }

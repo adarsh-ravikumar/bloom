@@ -1,65 +1,37 @@
-use bloom_api::{BloomError, InboundChannel, InboundRX, OutboundChannel};
 use bloom_host;
 use bloom_logger::TAURI_STREAM;
-use std::net::TcpStream;
-use std::thread;
-use std::time::Duration;
-use tauri::{AppHandle, Emitter};
+use crossbeam_channel::unbounded;
 use tauri_plugin_log::fern;
 
-mod bridge;
+mod inbound;
+mod outbound;
+mod utils;
 
-use bridge::emit_event;
+use crate::{
+    inbound::{
+        frontend_connected, frontend_disconnected, handle_inbound_terminal,
+    },
+    outbound::emit_event,
+    utils::wait_until_server_starts,
+};
 
 type Shutdown = Box<dyn Fn(i32) + Send>;
 
-fn wait_until_server_starts(
-    port: u16,
-    total_attempts: u32,
-    attempt_cooldown_ms: u64,
-) -> Result<(), BloomError> {
-    let address = format!("127.0.0.1:{port}").parse().unwrap();
-
-    for _ in 0..total_attempts {
-        if TcpStream::connect_timeout(&address, Duration::from_millis(200)).is_ok() {
-            return Ok(());
-        }
-
-        thread::sleep(Duration::from_millis(attempt_cooldown_ms));
-    }
-
-    Err(BloomError::ConnectToFrontendFailed)
-}
-
-fn command_invoker(app_handle: AppHandle, rx: InboundRX) -> Result<(), BloomError> {
-    loop {
-        let command = rx.recv().map_err(|e| {
-            println!("{:?}", e);
-            BloomError::ChannelRecieveError
-        })?;
-
-        let command_name = command.command.as_str();
-        println!("Emitting command: {command_name}");
-        // now that we have the bloom command, we can simply invoke the command
-        let _ = app_handle.emit(command_name, command.data);
-    }
-}
-
 pub fn run(port: u16, start_pipeline: impl FnOnce(Shutdown) + Send + 'static) {
-    let tauri_channel = InboundChannel::new();
-    let host_channel = OutboundChannel::new();
+    let (command_tx, command_rx) = unbounded();
+    let (event_tx, event_rx) = unbounded();
+    let (frontend_tx, frontend_rx) = unbounded();
 
     tauri::Builder::default()
         .setup(move |app| {
-            let host_handle = app.handle().clone();
-
+            // setup tauri app
             if cfg!(debug_assertions) {
                 let tauri_dispatch =
                     fern::Dispatch::new().chain(fern::Output::call(move |record| {
                         bloom_logger::log(TAURI_STREAM, record.args());
                     }));
 
-                host_handle.plugin(
+                app.handle().plugin(
                     tauri_plugin_log::Builder::default()
                         .level(log::LevelFilter::Info)
                         .clear_targets()
@@ -70,18 +42,14 @@ pub fn run(port: u16, start_pipeline: impl FnOnce(Shutdown) + Send + 'static) {
                 )?;
             }
 
-            // start the host
-            let command_handle= app.handle().clone();
-            let tauri_tx= tauri_channel.tx.clone();
-            let tauri_rx = tauri_channel.rx;
-            let host_rx = host_channel.rx;
-
+            // spawn host and inbound terminal worker threads
             std::thread::spawn(move || {
-                bloom_host::init(tauri_tx, host_rx).unwrap();
+                bloom_host::init(command_tx, event_rx).unwrap();
             });
 
+            let command_handle = app.handle().clone();
             std::thread::spawn(move || {
-                command_invoker(command_handle, tauri_rx);
+                let _ = handle_inbound_terminal(command_handle, command_rx, frontend_rx);
             });
 
             // run the pipeline
@@ -103,9 +71,12 @@ pub fn run(port: u16, start_pipeline: impl FnOnce(Shutdown) + Send + 'static) {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            emit_event
+            emit_event,
+            frontend_connected,
+            frontend_disconnected
         ])
-            .manage(host_channel.tx.clone())
+        .manage(event_tx)
+        .manage(frontend_tx)
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
