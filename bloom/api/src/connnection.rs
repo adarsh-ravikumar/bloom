@@ -1,8 +1,6 @@
-use crossbeam_channel::Sender;
-use std::net::TcpStream;
-
 use crate::{BloomCommand, BloomError, Packet};
 
+#[derive(Debug, Clone)]
 pub struct BloomConnection {
     // Connection Packet -> 44 bytes
     // : Client Version -> [major, minor, patch] 3 bytes
@@ -12,8 +10,6 @@ pub struct BloomConnection {
     pub client_ver: (u8, u8, u8),
     pub client_id: String,
     pub app_name: String,
-    pub stream: Option<TcpStream>,
-    pub disconnect_tx: Option<Sender<bool>>,
 }
 
 impl Packet for BloomConnection {
@@ -46,8 +42,6 @@ impl Packet for BloomConnection {
             client_ver: (major_ver, minor_ver, patch_ver),
             client_id: id.into(),
             app_name: app_name.into(),
-            stream: None,
-            disconnect_tx: None,
         })
     }
 
@@ -86,17 +80,6 @@ impl Packet for BloomConnection {
 }
 
 impl BloomConnection {
-    pub fn new(
-        packet_bytes: Vec<u8>,
-        stream: TcpStream,
-        disconnect_tx: Sender<bool>,
-    ) -> Result<Self, BloomError> {
-        let mut packet = BloomConnection::from_bytes(packet_bytes)?;
-        packet.stream = Some(stream);
-        packet.disconnect_tx = Some(disconnect_tx);
-        Ok(packet)
-    }
-
     pub fn into_command(&self) -> Result<BloomCommand, BloomError> {
         let data = serde_json::json!({
             "client_ver": self.client_ver,
@@ -108,22 +91,5 @@ impl BloomConnection {
             command: "client_connected".into(),
             data,
         })
-    }
-}
-
-impl Clone for BloomConnection {
-    fn clone(&self) -> Self {
-        let stream = match &self.stream {
-            Some(s) => Some(s.try_clone().unwrap()),
-            None => None,
-        };
-
-        Self {
-            client_ver: self.client_ver,
-            client_id: self.client_id.clone(),
-            app_name: self.app_name.clone(),
-            stream,
-            disconnect_tx: self.disconnect_tx.clone(),
-        }
     }
 }

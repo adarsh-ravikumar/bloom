@@ -1,8 +1,8 @@
-use bloom_api::{BloomEvent, EventTx};
+use bloom_api::{BloomEvent, EventChannel};
 use tauri::State;
 
 #[tauri::command]
-pub fn emit_event(event: BloomEvent, event_tx: State<'_, EventTx>) {
+pub fn emit_event(event: BloomEvent, event_channel: State<'_, EventChannel>) {
     println!("[OUTBOUND ORIGIN] Recieved event {}", event.event);
-    let _ = event_tx.send(event);
+    event_channel.send(event);
 }

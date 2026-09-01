@@ -1,73 +1,42 @@
 use std::{io::Write, net::TcpStream};
 
 use bloom_api::{
-    BloomError, BloomEvent, ClientEvent, ClientRx, EventRx, Packet,
+    ClientChannel, ClientEvent, EventChannel, Packet, state::global_state,
 };
 use crossbeam_channel::select;
 
-// Outbound cannot reliable detect client disconnection
-// It blocks the thread until event_rx is written to.
-// Hence only when an event is generated, we will
-// know if the client has disconnected
-
 pub fn handle_outbound_terminal(
-    client_rx: ClientRx,
-    event_rx: EventRx,
-) -> Result<(), BloomError> {
-    println!("[I AM OUTBOUND]");
+    stream: &mut TcpStream,
+    client_channel: &ClientChannel,
+    event_channel: &EventChannel,
+) {
     loop {
-        let ClientEvent::Connected(client) = client_rx
-            .recv()
-            .map_err(|_| BloomError::ChannelRecieveError)?
-        else {
-            // return Err(BloomError::ClientDisconnected);
-            println!("client disconnected!");
-            continue;
-        };
-
-        // this will obtain the currently connected client
-        let Some(mut stream) = client.stream else {
-            // return Err(BloomError::FailedToObtainClientStream);
-            println!("client stream doesn't exist!");
-            continue;
-        };
-
-        println!("[OUTBOUND TERMINAL] Client connected! Waiting on events");
-
-        loop {
-            select! {
-                recv(client_rx) -> msg => {
-                    if let Ok(ClientEvent::Disconnected) = msg {
-                       break;
-                    }
+        select! {
+            recv(client_channel.rx()) -> msg => {
+                if let Ok(ClientEvent::Disconnected) = msg {
+                    break;
                 }
+            }
 
-                recv(event_rx) -> msg => {
-                    let event = msg.map_err(|_| BloomError::ChannelRecieveError)?;
-                    println!("[OUTBOUND TERMINAL] Recieved an event! sending to client... {}", event.event);
-                    write_event(&mut stream, event)?;
+            recv(event_channel.rx()) -> msg => {
+                match msg {
+                    Ok(event) => {
+                        let bytes = event.to_bytes().unwrap();
+                        let len = bytes.len() as u32;
+
+                        // even though it is possible that the writes error out due to client
+                        // disconnection, we let the inbound handle the disconnection. oubound will
+                        // simply ignore the error, if any occor.
+                        // Multiple sources of reporting disconnection might lead to race conditions
+                        let _ = stream.write_all(&len.to_be_bytes());
+                        let _ = stream.write_all(&bytes);
+                    }
+
+                    Err(_) => {
+                        global_state().terminate_app();
+                    }
                 }
             }
         }
     }
-}
-
-fn write_event(
-    stream: &mut TcpStream,
-    event: BloomEvent,
-) -> Result<(), BloomError> {
-    let bytes = event.to_bytes()?;
-    let len = bytes.len() as u32;
-
-    println!("[OUTBOUND TERMINAL] Sending {} bytes", len);
-
-    stream
-        .write_all(&len.to_be_bytes())
-        .map_err(|_| BloomError::TcpWriteFailed)?;
-
-    stream
-        .write_all(&bytes)
-        .map_err(|_| BloomError::TcpWriteFailed)?;
-
-    Ok(())
 }

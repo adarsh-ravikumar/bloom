@@ -12,7 +12,9 @@
   let count: number = $state(0);
 
   onMount(async () => {
-    await listen("client_connected", (event) => {
+    console.log("Mount");
+
+    const unlistenConnected = await listen("client_connected", (event) => {
       console.log("receieved client connection packet");
       console.log(event);
       clientInfoRecieved = true;
@@ -21,12 +23,17 @@
       appName = event.payload.app_name;
     });
 
-    await listen("increment", (event) => {
+    const unlistenInc = await listen("increment", (event) => {
       console.log("increment!");
       count++;
     });
 
     await invoke("frontend_connected");
+
+    return () => {
+      unlistenConnected();
+      unlistenInc();
+    };
   });
 
   onDestroy(async () => {
@@ -57,10 +64,10 @@
 <style>
   button {
     background: black;
-    padding: 1rem;
-    font-size: 2rem;
+    padding: 0.5rem;
+    font-size: 1rem;
     color: white;
-    border-radius: 0.5rem;
+    border-radius: 0.3rem;
     border: none;
     cursor: pointer;
 

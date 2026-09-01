@@ -1,16 +1,16 @@
 mod channel;
+mod command;
 mod connnection;
 mod error;
-mod message;
+mod event;
 mod packet;
 mod project;
+pub mod state;
 
-pub use channel::{
-    ClientEvent, ClientRx, ClientTx, CommandRx, CommandTx, EventRx, EventTx,
-    FrontendEvent, FrontendRx, FrontendTx,
-};
+pub use channel::*;
+pub use command::BloomCommand;
 pub use connnection::BloomConnection;
 pub use error::BloomError;
-pub use message::{BloomCommand, BloomEvent};
+pub use event::BloomEvent;
 pub use packet::Packet;
 pub use project::ProjectConfig;

@@ -1,53 +1,62 @@
-use bloom_api::{BloomError, CommandRx, FrontendEvent, FrontendRx, FrontendTx};
+use bloom_api::{
+    BloomError, CommandChannel, FrontendChannel, FrontendEvent,
+    state::global_state,
+};
 use crossbeam_channel::select;
 use tauri::{AppHandle, Emitter, State};
 
 pub fn handle_inbound_terminal(
     app_handle: AppHandle,
-    command_rx: CommandRx,
-    frontend_rx: FrontendRx,
+    command_channel: CommandChannel,
+    frontend_channel: FrontendChannel,
 ) -> Result<(), BloomError> {
     loop {
-        let FrontendEvent::Connected = frontend_rx
-            .recv()
-            .map_err(|_| BloomError::ChannelRecieveError)?
-        else {
-            continue;
-        };
+        select! {
+            recv(command_channel.rx()) -> command => {
+                println!("Command channel got a message");
+                let Ok(command) = command else {
+                    global_state().terminate_app();
+                    continue;
+                };
 
-        loop {
-            select! {
-                recv(command_rx) -> command => {
-                    let Ok(command) = command else {
-                        // return Err(BloomError::ChannelRecieveError)
-                        continue
-                    };
+                let command_name = command.command.as_str();
+                println!("Emitting {command_name}");
+                let _ = app_handle.emit(command_name, command.data);
+            }
 
-                    let command_name = command.command.as_str();
-                    println!("Emitting {command_name}");
-                    let _ = app_handle.emit(command_name, command.data);
-                }
+            recv(frontend_channel.rx()) -> msg => {
+                println!("Got some message on frontend_rx");
+                match msg {
+                    Err(_) => (),
 
-                recv(frontend_rx) -> msg => {
-                    let Ok(FrontendEvent::Disconnected) = msg else {
-                        continue
-                    };
+                    Ok(FrontendEvent::Disconnected) =>
+                        continue,
 
-                    break;
-                }
+                    Ok(FrontendEvent::Connected) => {
+                        println!("Frontend Connected :) Trying to send client information");
+
+                        let client = global_state().get_client();
+                        println!("Client exists? {:?}", client.is_some());
+
+                        if let Some(client) = client {
+                            let client = client.into_command()?;
+                            println!("Packing into command: {:?}", client);
+                            let _ = app_handle.emit(client.command.as_str(), client.data);
+                        }
+                    }
+
+                };
             }
         }
     }
 }
 
 #[tauri::command]
-pub fn frontend_connected(frontend_tx: State<'_, FrontendTx>) {
-    println!("Frontend Connected :)");
-    let _ = frontend_tx.send(FrontendEvent::Connected);
+pub fn frontend_connected(frontend_channel: State<'_, FrontendChannel>) {
+    frontend_channel.send(FrontendEvent::Connected);
 }
 
 #[tauri::command]
-pub fn frontend_disconnected(frontend_tx: State<'_, FrontendTx>) {
-    println!("Frontend Disconnected :(");
-    let _ = frontend_tx.send(FrontendEvent::Disconnected);
+pub fn frontend_disconnected(frontend_channel: State<'_, FrontendChannel>) {
+    frontend_channel.send(FrontendEvent::Disconnected);
 }

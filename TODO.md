@@ -15,12 +15,12 @@
 ## Protocol
 
 - Goal: Print to console
-[ ] Connection (Handshake, identity and version validation)
-[ ] Rejection
-[ ] Disconnection
-[ ] Command
-[ ] Event
-[ ] Synchronization
+[x] Connection (Handshake, identity and version validation)
+[x] Rejection
+[x] Disconnection
+[x] Command
+[x] Event
+[x] Synchronization
 [ ] Failure semantics
 
 ## Bloom core
@@ -35,7 +35,7 @@
 
 ## Svelte + Tauri stub
 
-[ ] Integrate Tauri + Bloom host
+[x] Integrate Tauri + Bloom host
 [ ] Port the text field example
 [ ] Wire and test e2e commands and events
 [ ] Wire and test workspace sync
