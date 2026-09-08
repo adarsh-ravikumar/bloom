@@ -1,0 +1,41 @@
+<div class="page" id="main">
+    <header class="header">
+        <h1>Bloom</h1>
+        <p>A UI framework</p>
+    </header>
+
+    <main class="content">
+        <section class="hero">
+            <h2>Welcome to Bloom</h2>
+            <p>Build beautiful desktop applications.</p>
+        </section>
+
+        <section class="features">
+            <div class="feature">
+                <h3>Fast</h3>
+                <p>Compiled to efficient JavaScript.</p>
+            </div>
+
+            <div class="feature">
+                <h3>Simple</h3>
+                <p>Familiar HTML-like syntax.</p>
+            </div>
+
+            <div class="feature">
+                <h3>Reactive</h3>
+                <p>Fine-grained state updates.</p>
+            </div>
+        </section>
+
+        <img src="hero.png" alt="Bloom illustration" />
+
+        <div class="actions">
+            <button type="button" disabled>Get Started</button>
+            <button type="button">Learn More</button>
+        </div>
+    </main>
+
+    <footer class="footer">
+        <p>Built with Bloom.</p>
+    </footer>
+</div>

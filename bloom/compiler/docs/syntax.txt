@@ -1,0 +1,31 @@
+DOCUMENT        = ELEMENT* ;
+
+ELEMENT         = OPEN_TAG BODY CLOSE_TAG
+                | SELF_CLOSING_TAG ;
+
+OPEN_TAG        = LANGLE IDENT ATTRIBUTE* RANGLE ;
+
+CLOSE_TAG       = LANGLE FWD_SLASH IDENT RANGLE ;
+
+SELF_CLOSING_TAG
+                = LANGLE IDENT ATTRIBUTE* FWD_SLASH RANGLE ;
+
+BODY            = CONTENT* ;
+
+ATTRIBUTE       = IDENT
+                | IDENT EQ ATTRIBUTE_VALUE ;
+
+ATTRIBUTE_VALUE = DQUOTE TEXT DQUOTE
+                | QUOTE TEXT QUOTE ;
+
+CONTENT         = TEXT
+                | ELEMENT ;
+
+IDENT           = LETTER (LETTER | DIGIT | UNDERSCORE | HYPHEN)* ;
+
+LETTER          = "A"…"Z"
+                | "a"…"z" ;
+
+DIGIT           = "0"…"9" ;
+
+TEXT            = /* any content not beginning a markup delimiter */ ;
