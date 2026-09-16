@@ -93,11 +93,15 @@ impl IOFile {
     //     self.line_starts[line] + col
     // }
 
-    pub fn view(&self, start: usize, end: usize) -> &str {
+    pub fn view(&self, start: usize, mut end: usize) -> &str {
+        if end < start {
+            end = start;
+        }
         std::str::from_utf8(&self.src[start..end]).unwrap()
     }
 
-    pub fn view_span(&self, span: Span) -> &str {
+    pub fn view_span<T: AsRef<Span>>(&self, span: T) -> &str {
+        let span = span.as_ref();
         self.view(span.start, span.end)
     }
 }

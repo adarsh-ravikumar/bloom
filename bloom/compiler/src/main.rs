@@ -11,7 +11,7 @@ mod parser;
 mod span;
 
 fn main() {
-    let file = match IOFile::from_path("./html_test.bloom") {
+    let file = match IOFile::from_path("./expr_test.bloom") {
         Ok(f) => f,
         Err(msg) => return println!("{msg}"),
     };

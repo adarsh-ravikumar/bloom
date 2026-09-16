@@ -13,20 +13,24 @@ pub struct Fragment {
 
 #[derive(Debug, Clone)]
 pub enum FragmentNode {
-    RegularElement(RegularElement),
-    Text(Text),
+    Element(Element),
+    Text(Span),
+    Expression(Span),
+    ControlBlock(ControlBlock),
 }
 
 #[derive(Debug, Clone)]
-pub struct Text {
-    pub data: Span,
-}
-
-#[derive(Debug, Clone)]
-pub struct RegularElement {
+pub struct Element {
     pub name: Span,
     pub attributes: Vec<Attribute>,
     pub fragment: Option<Fragment>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ControlBlock {
+    pub control_type: Span,
+    pub expression: Span,
+    pub fragment: Fragment,
 }
 
 // Attribute
@@ -38,6 +42,6 @@ pub struct Attribute {
 
 #[derive(Debug, Clone)]
 pub enum AttributeValue {
-    Text(Text),
+    Parts(Fragment),
     True,
 }

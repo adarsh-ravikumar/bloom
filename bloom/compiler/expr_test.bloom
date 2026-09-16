@@ -1,0 +1,54 @@
+<div class="page">
+    <header class="header">
+        <h1>Hello, {name}!</h1>
+        <p>Welcome to {appName}.</p>
+    </header>
+
+    {#if user}
+        <section class="profile">
+            <h2>{user.name}</h2>
+            <p>Age: {user.age}</p>
+            <p>{user.name} has {user.points} points.</p>
+        </section>
+    {/if}
+
+    <section class="stats">
+        {#each stats as stat}
+            <div class="stat">
+                <span>{stat.label}: {stat.value}</span>
+            </div>
+        {/each}
+
+        <div class="stat">
+            <span>Total: {wins + losses}</span>
+        </div>
+    </section>
+
+    {#if imageUrl}
+        <img src={imageUrl} alt="Profile picture" />
+    {/if}
+
+    <button
+        class={buttonClass}
+        title="Hello {name}"
+        disabled={isDisabled}
+    >
+        Clicked {count} times
+    </button>
+
+    {#if count > 0}
+        <p>
+            This is a longer piece of text with {expression}
+            in the middle and another {secondExpression} at the end.
+        </p>
+    {/if}
+
+    <footer>
+        <p>Built by {author} for {platform}.</p>
+
+        {#each links as link}
+            <a href={link.url}>{link.label}</a>
+        {/each}
+    </footer>
+</div>
+

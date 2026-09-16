@@ -2,8 +2,8 @@ use crate::{
     err::ParserError,
     io::IOFile,
     node::{
-        Attribute, AttributeValue, Fragment, FragmentNode, RegularElement,
-        Root, Text,
+        Attribute, AttributeValue, ControlBlock, Element, Fragment,
+        FragmentNode, Root,
     },
     span::Span,
 };
@@ -60,6 +60,7 @@ impl Parser {
             return Ok(());
         }
 
+        // println!("{}", ch as char);
         Err(ParserError::UnexpectedCharacter)
     }
 
@@ -114,47 +115,170 @@ impl Parser {
 
         self.exhaust_whitespace();
 
-        let value: Span;
-
         let Some(cur) = self.peek() else {
             return Err(ParserError::UnexpectedEOF);
         };
 
-        let start;
-        let mut end;
+        let parts;
 
         if cur == b'"' || cur == b'\'' {
-            let quote = cur;
             let _ = self.advance();
-
-            start = self.position;
-            end = self.position;
-
-            while let Some(cur) = self.advance()
-                && cur != quote
-            {
-                end += 1;
-            }
+            parts = self.parse_parts(vec![cur])?;
         } else {
-            start = self.position;
-            end = self.position;
-
-            while let Some(cur) = self.advance()
-                && !(cur == b' ' || cur == b'\n' || cur == b'>' || cur == b'/')
-            {
-                end += 1;
-            }
+            parts = self.parse_parts(vec![b' ', b'\n', b'>', b'/'])?;
+            self.revert();
         }
-
-        value = Span::new(start, end);
 
         Ok(Attribute {
             name,
-            value: AttributeValue::Text(Text { data: value }),
+            value: AttributeValue::Parts(parts),
         })
     }
 
-    fn parse_element(&mut self) -> Result<RegularElement, ParserError> {
+    fn parse_control_block(&mut self) -> Result<FragmentNode, ParserError> {
+        // consume ident
+        let control_type = self.parse_identifier()?;
+        self.exhaust_whitespace();
+
+        let mut inner_braces = 0;
+
+        let start = self.position;
+        let mut end = self.position;
+
+        while let Some(cur) = self.peek() {
+            if cur == b'{' {
+                inner_braces += 1;
+            }
+
+            if cur == b'}' {
+                if inner_braces <= 0 {
+                    let _ = self.advance();
+                    break;
+                } else {
+                    inner_braces -= 1;
+                }
+            }
+
+            end += 1;
+            let _ = self.advance();
+        }
+
+        let fragment = self.parse_fragment()?;
+        self.exhaust_whitespace();
+
+        self.expect_char(b'{')?;
+
+        let _ = self.advance();
+
+        self.expect_char(b'/')?;
+
+        let _ = self.advance();
+
+        let closing_name = self.parse_identifier()?;
+
+        if self.file.view_span(closing_name)
+            != self.file.view_span(control_type)
+        {
+            return Err(ParserError::InvalidTagClose);
+        }
+
+        self.expect_char(b'}')?;
+
+        Ok(FragmentNode::ControlBlock(ControlBlock {
+            control_type,
+            fragment,
+            expression: Span::new(start, end),
+        }))
+    }
+
+    fn parse_parts(&mut self, delim: Vec<u8>) -> Result<Fragment, ParserError> {
+        let mut nodes = Vec::new();
+
+        let mut start = self.position;
+        let mut end = self.position;
+        let mut is_building_expr = false;
+
+        // println!("parsing parts: {}", self.peek().unwrap() as char);
+
+        let mut inner_braces = 0;
+
+        while let Some(cur) = self.peek() {
+            if delim.contains(&cur) {
+                let _ = self.advance();
+                break;
+            }
+
+            if cur == b'{' {
+                // println!("seen {{");
+                if is_building_expr {
+                    inner_braces += 1;
+                } else {
+                    // println!("Pushing text if needed");
+                    if start < end {
+                        nodes.push(FragmentNode::Text(Span::new(start, end)));
+                    }
+
+                    let Some(next_char) = self.peek_by(1) else {
+                        break;
+                    };
+
+                    if next_char == b'#' {
+                        // consume '{' and '#'
+                        let _ = self.advance_by(2);
+                        nodes.push(self.parse_control_block()?);
+                    }
+
+                    start = self.position + 1;
+                    is_building_expr = true;
+                }
+
+                if self.peek_by(1) == Some(b'#') {
+                    nodes.push(self.parse_control_block()?);
+                    break;
+                }
+
+                if self.peek_by(1) == Some(b'/') {
+                    self.revert();
+                    break;
+                }
+            }
+
+            if cur == b'}' {
+                // println!("seen }}");
+
+                if inner_braces <= 0 {
+                    // println!("not an inner brace");
+                    nodes.push(FragmentNode::Expression(Span::new(start, end)));
+                    // println!(
+                    //     "pushing expression: {}",
+                    //     self.file.view(start, end)
+                    // );
+                    start = self.position + 1;
+                    is_building_expr = false;
+                } else {
+                    // println!("inner brace!");
+                    inner_braces -= 1;
+                }
+            }
+
+            // println!("after parsing: {}", self.peek().unwrap() as char);
+            end += 1;
+            let _ = self.advance();
+            // println!("after advance: {}", self.peek().unwrap() as char);
+        }
+
+        // println!("after completing: {}", self.peek().unwrap() as char);
+
+        // if there is no matching }, then whatever we have accumelated so far will be a text block
+        // and if we are not currently parsing an expression, again, we are dealing with a text block
+        if start < end {
+            nodes.push(FragmentNode::Text(Span::new(start, end)));
+        }
+
+        Ok(Fragment { nodes })
+    }
+
+    fn parse_element(&mut self) -> Result<Element, ParserError> {
         self.expect_char(b'<')?;
         let _ = self.advance();
 
@@ -174,6 +298,15 @@ impl Parser {
             }
 
             // parse attributes
+            // println!(
+            //     "error here ig? {} {}",
+            //     self.position,
+            //     self.peek().unwrap() as char
+            // );
+            // println!(
+            //     "{}",
+            //     self.file.view(self.position - 3, self.position + 3)
+            // );
             attributes.push(self.parse_attribute()?);
 
             self.exhaust_whitespace();
@@ -186,7 +319,7 @@ impl Parser {
             self.expect_char(b'>')?;
             let _ = self.advance();
 
-            return Ok(RegularElement {
+            return Ok(Element {
                 name,
                 attributes,
                 fragment: None,
@@ -218,7 +351,7 @@ impl Parser {
         self.expect_char(b'>')?;
         let _ = self.advance();
 
-        Ok(RegularElement {
+        Ok(Element {
             name,
             attributes,
             fragment: Some(fragment),
@@ -228,35 +361,24 @@ impl Parser {
     fn parse_fragment(&mut self) -> Result<Fragment, ParserError> {
         let mut nodes = Vec::new();
 
-        let mut text_start = self.position;
-        let mut text_end = self.position;
-        let mut is_building_text = false;
+        while let Some(_) = self.peek() {
+            let parts = self.parse_parts(vec![b'<'])?;
+            nodes.extend(parts.nodes);
+            self.revert();
 
-        while let Some(cur) = self.peek() {
-            if cur == b'<' {
-                if is_building_text {
-                    nodes.push(FragmentNode::Text(Text {
-                        data: Span::new(text_start, text_end),
-                    }));
+            self.exhaust_whitespace();
 
-                    is_building_text = false;
-                }
-
-                if self.peek_by(1) == Some(b'/') {
-                    break;
-                }
-
-                nodes.push(FragmentNode::RegularElement(self.parse_element()?));
-            } else {
-                if is_building_text == false {
-                    is_building_text = true;
-                    text_start = self.position;
-                    text_end = self.position;
-                }
-
-                text_end += 1;
-                let _ = self.advance();
+            // EOF
+            if self.peek().is_none() {
+                break;
             }
+
+            // Tag close
+            if self.peek_by(1) == Some(b'/') {
+                break;
+            }
+
+            nodes.push(FragmentNode::Element(self.parse_element()?));
         }
 
         Ok(Fragment { nodes })
@@ -274,43 +396,74 @@ impl Parser {
         Ok(())
     }
 
-    fn display_fragment(&mut self, frag: &Fragment, level: usize) {
-        let base_indent = "|  ".repeat(level);
+    fn display_fragment(&mut self, frag: &Fragment, level: usize, ch: char) {
+        let base_indent = format!("{ch}  ").repeat(level);
 
         for node in &frag.nodes {
             match node {
-                FragmentNode::RegularElement(elem) => {
+                FragmentNode::Element(elem) => {
+                    println!("{base_indent}tag");
                     print!(
-                        "{base_indent}name: {} | attribs: [ ",
+                        "{base_indent}{ch}  name: {}\n{base_indent}{ch}  attribs: [",
                         self.file.view_span(elem.name)
                     );
 
-                    for attrib in &elem.attributes {
-                        let val = match &attrib.value {
-                            AttributeValue::Text(text) => {
-                                format!(
-                                    "\"{}\"",
-                                    self.file.view_span(text.data)
-                                )
-                            }
-                            AttributeValue::True => "true".into(),
-                        };
+                    if elem.attributes.len() == 0 {
+                        println!("]");
+                    } else {
+                        println!("");
+                        for attrib in &elem.attributes {
+                            match &attrib.value {
+                                AttributeValue::True => {
+                                    print!(
+                                        "{base_indent}   {},\n",
+                                        self.file.view_span(attrib.name)
+                                    )
+                                }
 
-                        print!("{}={} ", self.file.view_span(attrib.name), val)
+                                AttributeValue::Parts(parts) => {
+                                    print!(
+                                        "{base_indent}   {}:\n",
+                                        self.file.view_span(attrib.name)
+                                    );
+                                    self.display_fragment(
+                                        parts,
+                                        level + 3,
+                                        ' ',
+                                    );
+                                }
+                            }
+                        }
+
+                        println!("{base_indent}]");
                     }
 
-                    println!("]");
-
                     if let Some(frag) = &elem.fragment {
-                        self.display_fragment(frag, level + 1);
+                        self.display_fragment(frag, level + 2, '|');
                     }
                 }
 
-                FragmentNode::Text(elem) => {
+                FragmentNode::Text(text) => {
                     println!(
                         "{base_indent}text: {:?}",
-                        self.file.view_span(elem.data)
+                        self.file.view_span(text)
                     );
+                }
+
+                FragmentNode::Expression(expr) => {
+                    println!(
+                        "{base_indent}expr: {:?}",
+                        self.file.view_span(expr)
+                    );
+                }
+
+                FragmentNode::ControlBlock(block) => {
+                    println!(
+                        "{base_indent}{}: {:?}",
+                        self.file.view_span(block.control_type),
+                        self.file.view_span(block.expression),
+                    );
+                    self.display_fragment(&block.fragment, level + 1, '|');
                 }
             }
         }
@@ -325,6 +478,8 @@ impl Parser {
             return;
         };
 
-        self.display_fragment(fragment, 0);
+        self.display_fragment(fragment, 0, '|');
+
+        // println!("{:?}", root);
     }
 }

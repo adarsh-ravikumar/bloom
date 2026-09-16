@@ -6,6 +6,12 @@ pub struct Span {
     pub end: usize,
 }
 
+impl AsRef<Span> for Span {
+    fn as_ref(&self) -> &Self {
+        self
+    }
+}
+
 impl fmt::Display for Span {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}:{}", self.start, self.end)
