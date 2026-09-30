@@ -1,24 +1,25 @@
-use crate::{
-    io::IOFile,
-    node::{AttributeValue, FragmentNode},
-    parser::Parser,
-};
+use crate::{diagnostic::DiagnosticRenderer, parser::Parser};
 
-mod err;
-mod io;
-mod node;
+mod common;
+mod diagnostic;
 mod parser;
-mod span;
+mod utils;
 
 fn main() {
-    let file = match IOFile::from_path("./expr_test.bloom") {
+    let file = match common::IOFile::from_path("./playground.bloom") {
         Ok(f) => f,
         Err(msg) => return println!("{msg}"),
     };
 
-    let mut parser = Parser::new(file);
-    let res = match parser.parse() {
+    let mut renderer = DiagnosticRenderer::new(&file);
+
+    let mut parser = Parser::new(&file);
+
+    let _ = match parser.parse() {
         Ok(_) => parser.display(),
-        Err(err) => println!("{:?}", err),
+        Err(diag) => {
+            let mut diag = vec![diag];
+            println!("{}", renderer.render(&mut diag))
+        }
     };
 }

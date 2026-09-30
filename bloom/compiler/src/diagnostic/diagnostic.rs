@@ -1,0 +1,55 @@
+use crate::{common::Span, utils::Style};
+
+pub enum DiagnosticSeverity {
+    Warn,
+    Error,
+}
+
+impl DiagnosticSeverity {
+    pub fn color(&self) -> &str {
+        match self {
+            Self::Warn => Style::BRIGHT_YELLOW,
+            Self::Error => Style::BRIGHT_RED,
+        }
+    }
+}
+
+pub enum DiagnosticClass {
+    UnexpectedChar,
+    InvalidIdentifier,
+    UnmatchedTag,
+}
+
+impl DiagnosticClass {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::UnexpectedChar => "E001",
+            Self::InvalidIdentifier => "E002",
+            Self::UnmatchedTag => "E003",
+        }
+    }
+}
+
+pub enum LabelKind {
+    Primary,
+    Secondary,
+}
+
+pub struct Label {
+    pub span: Span,
+    pub msg: String,
+    pub kind: LabelKind,
+    pub paranthesise: bool,
+}
+
+pub struct Diagnostic {
+    pub severity: DiagnosticSeverity,
+    pub class: DiagnosticClass,
+
+    pub msg: String,
+
+    pub location: Span,
+
+    pub labels: Vec<Label>,
+    pub notes: Vec<String>,
+}

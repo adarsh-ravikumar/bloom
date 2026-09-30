@@ -1,7 +1,31 @@
-DOCUMENT        = ELEMENT* ;
+ROOT            = FRAGMENT ;
 
-ELEMENT         = OPEN_TAG BODY CLOSE_TAG
+ELEMENT         = OPEN_TAG FRAGMENT CLOSE_TAG
                 | SELF_CLOSING_TAG ;
+
+CONTROL         = IF_CTRL | EACH_CTRL
+
+IF_CTRL         = LBRACE HASH 'if' JS_SOURCE RBRACE
+                  FRAGMENT
+                  (
+                    LBRACE COLON 'else if' JS_SOURCE RBRACE
+                    FRAGMENT
+                  )*
+                  (
+                    LBRACE COLON 'else' RBRACE
+                    FRAGMENT
+                  )?
+                  LBRACE FWD_SLASH 'if' RBRACE
+
+EACH_CTRL       = LBRACE HASH 'each' RBRACE
+                  FRAGMENT
+                  LBRACE FWD_SLASH 'each' RBRACE
+
+FRAGMENT        = (PARTS | ELEMENT | CONTROL)* ;
+
+PARTS           = (TEXT | EXPR)+ ;
+
+EXPR            = LBRACE JS_SOURCE RBRACE
 
 OPEN_TAG        = LANGLE IDENT ATTRIBUTE* RANGLE ;
 
@@ -10,22 +34,16 @@ CLOSE_TAG       = LANGLE FWD_SLASH IDENT RANGLE ;
 SELF_CLOSING_TAG
                 = LANGLE IDENT ATTRIBUTE* FWD_SLASH RANGLE ;
 
-BODY            = CONTENT* ;
-
 ATTRIBUTE       = IDENT
                 | IDENT EQ ATTRIBUTE_VALUE ;
 
-ATTRIBUTE_VALUE = DQUOTE TEXT DQUOTE
-                | QUOTE TEXT QUOTE ;
-
-CONTENT         = TEXT
-                | ELEMENT ;
+ATTRIBUTE_VALUE = DQUOTE PARTS DQUOTE
+                | QUOTE PARTS QUOTE ;
 
 IDENT           = LETTER (LETTER | DIGIT | UNDERSCORE | HYPHEN)* ;
 
-LETTER          = "A"…"Z"
-                | "a"…"z" ;
-
-DIGIT           = "0"…"9" ;
+JS_SOURCE       = /* opque source accepted by the JS parser */
+                  (stops at matching '}')
 
 TEXT            = /* any content not beginning a markup delimiter */ ;
+                  (stops before '<', '{')

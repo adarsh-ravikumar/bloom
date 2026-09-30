@@ -29,8 +29,16 @@ impl Parser {
 
     fn advance_by(&mut self, by: usize) -> Option<u8> {
         let next = self.peek();
-        self.position += by;
+        self.consume_by(by);
         next
+    }
+
+    fn consume(&mut self) {
+        self.consume_by(1);
+    }
+
+    fn consume_by(&mut self, by: usize) {
+        self.position += by;
     }
 
     fn revert(&mut self) {
@@ -60,8 +68,15 @@ impl Parser {
             return Ok(());
         }
 
-        // println!("{}", ch as char);
         Err(ParserError::UnexpectedCharacter)
+    }
+
+    fn is_letter(cur: u8) -> bool {
+        cur.is_ascii_alphabetic()
+    }
+
+    fn is_identifier_part(cur: u8) -> bool {
+        cur.is_ascii_alphanumeric() || cur == b'_' || cur == b'-'
     }
 
     fn parse_identifier(&mut self) -> Result<Span, ParserError> {
@@ -70,21 +85,19 @@ impl Parser {
         let start = self.position;
 
         // LETTER
-        if let Some(cur) = self.advance() {
-            if !((cur >= b'a' && cur <= b'z') || (cur >= b'A' && cur <= b'Z')) {
-                return Err(ParserError::InvalidIdentifier);
-            }
+        let Some(cur) = self.advance() else {
+            return Err(ParserError::UnexpectedEOF);
+        };
+
+        if !Self::is_letter(cur) {
+            return Err(ParserError::InvalidIdentifier);
         }
 
         let mut end = self.position;
 
         // (LETTER | DIGIT | HYPHEN | UNDERSCORE)*
         while let Some(cur) = self.advance()
-            && ((cur >= b'a' && cur <= b'z')
-                || (cur >= b'A' && cur <= b'Z')
-                || (cur >= b'0' && cur <= b'9')
-                || (cur == b'_')
-                || (cur == b'-'))
+            && Self::is_identifier_part(cur)
         {
             end += 1
         }
@@ -111,7 +124,7 @@ impl Parser {
             });
         }
 
-        let _ = self.advance();
+        self.consume();
 
         self.exhaust_whitespace();
 
@@ -122,10 +135,10 @@ impl Parser {
         let parts;
 
         if cur == b'"' || cur == b'\'' {
-            let _ = self.advance();
-            parts = self.parse_parts(vec![cur])?;
+            self.consume();
+            parts = self.parse_parts(&[cur])?;
         } else {
-            parts = self.parse_parts(vec![b' ', b'\n', b'>', b'/'])?;
+            parts = self.parse_parts(&[b' ', b'\n', b'>', b'/'])?;
             self.revert();
         }
 
@@ -136,7 +149,6 @@ impl Parser {
     }
 
     fn parse_control_block(&mut self) -> Result<FragmentNode, ParserError> {
-        // consume ident
         let control_type = self.parse_identifier()?;
         self.exhaust_whitespace();
 
@@ -152,7 +164,7 @@ impl Parser {
 
             if cur == b'}' {
                 if inner_braces <= 0 {
-                    let _ = self.advance();
+                    self.consume();
                     break;
                 } else {
                     inner_braces -= 1;
@@ -160,7 +172,7 @@ impl Parser {
             }
 
             end += 1;
-            let _ = self.advance();
+            self.consume();
         }
 
         let fragment = self.parse_fragment()?;
@@ -168,11 +180,11 @@ impl Parser {
 
         self.expect_char(b'{')?;
 
-        let _ = self.advance();
+        self.consume();
 
         self.expect_char(b'/')?;
 
-        let _ = self.advance();
+        self.consume();
 
         let closing_name = self.parse_identifier()?;
 
@@ -191,29 +203,25 @@ impl Parser {
         }))
     }
 
-    fn parse_parts(&mut self, delim: Vec<u8>) -> Result<Fragment, ParserError> {
+    fn parse_parts(&mut self, delim: &[u8]) -> Result<Fragment, ParserError> {
         let mut nodes = Vec::new();
 
         let mut start = self.position;
         let mut end = self.position;
         let mut is_building_expr = false;
 
-        // println!("parsing parts: {}", self.peek().unwrap() as char);
-
         let mut inner_braces = 0;
 
         while let Some(cur) = self.peek() {
             if delim.contains(&cur) {
-                let _ = self.advance();
+                self.consume();
                 break;
             }
 
             if cur == b'{' {
-                // println!("seen {{");
                 if is_building_expr {
                     inner_braces += 1;
                 } else {
-                    // println!("Pushing text if needed");
                     if start < end {
                         nodes.push(FragmentNode::Text(Span::new(start, end)));
                     }
@@ -232,45 +240,29 @@ impl Parser {
                     is_building_expr = true;
                 }
 
-                if self.peek_by(1) == Some(b'#') {
-                    nodes.push(self.parse_control_block()?);
-                    break;
+                match self.peek_by(1) {
+                    Some(b'#') => nodes.push(self.parse_control_block()?),
+                    Some(b'/') => self.revert(),
+                    _ => continue,
                 }
 
-                if self.peek_by(1) == Some(b'/') {
-                    self.revert();
-                    break;
-                }
+                break;
             }
 
             if cur == b'}' {
-                // println!("seen }}");
-
                 if inner_braces <= 0 {
-                    // println!("not an inner brace");
                     nodes.push(FragmentNode::Expression(Span::new(start, end)));
-                    // println!(
-                    //     "pushing expression: {}",
-                    //     self.file.view(start, end)
-                    // );
                     start = self.position + 1;
                     is_building_expr = false;
                 } else {
-                    // println!("inner brace!");
                     inner_braces -= 1;
                 }
             }
 
-            // println!("after parsing: {}", self.peek().unwrap() as char);
             end += 1;
-            let _ = self.advance();
-            // println!("after advance: {}", self.peek().unwrap() as char);
+            self.consume();
         }
 
-        // println!("after completing: {}", self.peek().unwrap() as char);
-
-        // if there is no matching }, then whatever we have accumelated so far will be a text block
-        // and if we are not currently parsing an expression, again, we are dealing with a text block
         if start < end {
             nodes.push(FragmentNode::Text(Span::new(start, end)));
         }
@@ -280,7 +272,7 @@ impl Parser {
 
     fn parse_element(&mut self) -> Result<Element, ParserError> {
         self.expect_char(b'<')?;
-        let _ = self.advance();
+        self.consume();
 
         let name = self.parse_identifier()?;
 
@@ -297,16 +289,6 @@ impl Parser {
                 break;
             }
 
-            // parse attributes
-            // println!(
-            //     "error here ig? {} {}",
-            //     self.position,
-            //     self.peek().unwrap() as char
-            // );
-            // println!(
-            //     "{}",
-            //     self.file.view(self.position - 3, self.position + 3)
-            // );
             attributes.push(self.parse_attribute()?);
 
             self.exhaust_whitespace();
@@ -315,9 +297,9 @@ impl Parser {
         let is_self_closing = self.expect_char(b'/').is_ok();
 
         if is_self_closing {
-            let _ = self.advance();
+            self.consume();
             self.expect_char(b'>')?;
-            let _ = self.advance();
+            self.consume();
 
             return Ok(Element {
                 name,
@@ -327,16 +309,15 @@ impl Parser {
         }
 
         self.expect_char(b'>')?;
-        let _ = self.advance();
+        self.consume();
 
-        // parse fragment
         let fragment = self.parse_fragment()?;
 
         // tag close
         self.expect_char(b'<')?;
-        let _ = self.advance();
+        self.consume();
         self.expect_char(b'/')?;
-        let _ = self.advance();
+        self.consume();
 
         self.exhaust_whitespace();
 
@@ -349,7 +330,7 @@ impl Parser {
         self.exhaust_whitespace();
 
         self.expect_char(b'>')?;
-        let _ = self.advance();
+        self.consume();
 
         Ok(Element {
             name,
@@ -362,7 +343,7 @@ impl Parser {
         let mut nodes = Vec::new();
 
         while let Some(_) = self.peek() {
-            let parts = self.parse_parts(vec![b'<'])?;
+            let parts = self.parse_parts(&[b'<'])?;
             nodes.extend(parts.nodes);
             self.revert();
 
@@ -396,7 +377,7 @@ impl Parser {
         Ok(())
     }
 
-    fn display_fragment(&mut self, frag: &Fragment, level: usize, ch: char) {
+    fn display_fragment(&self, frag: &Fragment, level: usize, ch: char) {
         let base_indent = format!("{ch}  ").repeat(level);
 
         for node in &frag.nodes {
@@ -408,7 +389,7 @@ impl Parser {
                         self.file.view_span(elem.name)
                     );
 
-                    if elem.attributes.len() == 0 {
+                    if elem.attributes.is_empty() {
                         println!("]");
                     } else {
                         println!("");
@@ -469,8 +450,8 @@ impl Parser {
         }
     }
 
-    pub fn display(&mut self) {
-        let Some(root) = self.root.clone() else {
+    pub fn display(&self) {
+        let Some(root) = &self.root else {
             return;
         };
 
@@ -479,7 +460,5 @@ impl Parser {
         };
 
         self.display_fragment(fragment, 0, '|');
-
-        // println!("{:?}", root);
     }
 }

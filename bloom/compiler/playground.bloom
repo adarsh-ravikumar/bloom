@@ -1,1 +1,1 @@
-<a href={testing}>Hello</a>
+<div class="{#if foo}bar{/if}">

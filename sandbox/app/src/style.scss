@@ -1,0 +1,56 @@
+* {
+  padding: 0;
+  margin: 0;
+  box-sizing: border-box;
+  font-family: system-ui, sans-serif;
+}
+
+html, body {
+  height: 100%;
+  width: 100%;
+}
+
+#workspace {
+  background: #1C1C1C;
+  height: 100%;
+  padding: 10px;
+}
+
+.panel {
+  width: 500px;
+  height: 500px;
+  background: #1A1A1A;
+  outline: 2px solid #2a2a2a;
+}
+
+p {
+  color: white;
+  font-size: 1.3rem;
+}
+
+button {
+  border: none;
+  background: white;
+  border-radius: 2px;
+  padding: 0.5rem 1rem;
+  font-size: 1.3rem;
+  cursor: pointer;
+
+  scale: 1;
+  transition: scale 0.2s ease;
+
+  &:hover {
+    scale: 1.05;
+  }
+
+  &:active {
+    scale: 0.95;
+  }
+}
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+}

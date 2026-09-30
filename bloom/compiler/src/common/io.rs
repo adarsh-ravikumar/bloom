@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use crate::span::Span;
+use crate::common::Span;
 
 pub struct IOFile {
     pub path: PathBuf,
@@ -48,50 +48,50 @@ impl IOFile {
 
         starts
     }
-    //
-    // pub fn line_from_index(&self, idx: usize) -> Option<usize> {
-    //     if idx == self.src.len() {
-    //         return Some(self.line_starts.len() - 1);
-    //     }
-    //
-    //     let line = self.line_starts.partition_point(|&start| start <= idx);
-    //
-    //     line.checked_sub(1)
-    // }
-    //
-    // pub fn line(&self, line: usize) -> &str {
-    //     let start = self.line_starts[line - 1];
-    //
-    //     let mut end = if line == self.line_starts.len() {
-    //         self.src.len()
-    //     } else {
-    //         self.line_starts[line]
-    //     };
-    //
-    //     if end > start && self.src[end - 1] == b'\n' {
-    //         end -= 1;
-    //     }
-    //
-    //     std::str::from_utf8(&self.src[start..end])
-    //         .expect("UTF-8 error when attempting to read source")
-    // }
-    //
-    // pub fn line_col_from_index(&self, index: usize) -> (usize, usize) {
-    //     let line = self
-    //         .line_from_index(index)
-    //         .or_else(|| panic!("line index out of bounds!"))
-    //         .unwrap();
-    //
-    //     let line_start = self.line_starts[line];
-    //
-    //     let col = index - line_start;
-    //
-    //     (line + 1, col + 1)
-    // }
-    //
-    // pub fn index_from_line_col(&self, line: usize, col: usize) -> usize {
-    //     self.line_starts[line] + col
-    // }
+
+    pub fn line_from_index(&self, idx: usize) -> Option<usize> {
+        if idx == self.src.len() {
+            return Some(self.line_starts.len() - 1);
+        }
+
+        let line = self.line_starts.partition_point(|&start| start <= idx);
+
+        line.checked_sub(1)
+    }
+
+    pub fn line(&self, line: usize) -> &str {
+        let start = self.line_starts[line - 1];
+
+        let mut end = if line == self.line_starts.len() {
+            self.src.len()
+        } else {
+            self.line_starts[line]
+        };
+
+        if end > start && self.src[end - 1] == b'\n' {
+            end -= 1;
+        }
+
+        std::str::from_utf8(&self.src[start..end])
+            .expect("UTF-8 error when attempting to read source")
+    }
+
+    pub fn line_col_from_index(&self, index: usize) -> (usize, usize) {
+        let line = self
+            .line_from_index(index)
+            .or_else(|| panic!("line index out of bounds!"))
+            .unwrap();
+
+        let line_start = self.line_starts[line];
+
+        let col = index - line_start;
+
+        (line + 1, col + 1)
+    }
+
+    pub fn index_from_line_col(&self, line: usize, col: usize) -> usize {
+        self.line_starts[line] + col
+    }
 
     pub fn view(&self, start: usize, mut end: usize) -> &str {
         if end < start {
