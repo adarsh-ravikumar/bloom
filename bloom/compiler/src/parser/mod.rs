@@ -1,13 +1,6 @@
-mod attrib;
-mod control;
-mod diagnostic;
+mod diagnostics;
 mod display;
-mod element;
-mod fragment;
-mod ident;
-mod node;
+mod nodes;
 mod parser;
-mod parts;
 
-pub use node::*;
 pub use parser::Parser;

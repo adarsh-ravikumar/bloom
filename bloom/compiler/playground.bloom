@@ -1,1 +1,394 @@
-<div class="{#if foo}bar{/if}">
+<div
+  id="app"
+  class="page {theme.pageClass}"
+  data-user={user.id}
+  data-state="hello {state.name} {state.value ?? "unknown"}"
+  aria-label="{label}"
+  hidden
+>
+  <header class="header {header.className}">
+    <h1>{user.profile?.displayName ?? "Anonymous"}</h1>
+
+    <nav aria-label="Main navigation">
+      <a href={routes.home}>Home</a>
+      <a href={routes.profile}>{user.name}</a>
+      <a
+        href={routes.settings}
+        class="link {active === 'settings' ? 'active' : ''}"
+        title="Settings for {user.name}"
+      >
+        Settings
+      </a>
+    </nav>
+  </header>
+
+  <main>
+    <section
+      id="dashboard"
+      class="dashboard {layout.className}"
+      data-count={items.length}
+      data-label="Items: {items.length}"
+    >
+      {items.length === 0 ? "No items" : `${items.length} items`}
+
+      {foo({
+        user,
+        config: {
+          theme: "dark",
+          values: [1, 2, 3, { nested: true }]
+        }
+      })}
+
+      {#if user && user.profile?.active}
+        <section class="profile {user.profile.className}">
+          <h2>{user.profile.name}</h2>
+          <p>{user.profile.bio ?? "No biography available."}</p>
+
+          {#if user.profile.avatar}
+            <img
+              src={user.profile.avatar}
+              alt="Avatar of {user.profile.name}"
+            />
+          {:elif loading}
+            <span class="loading">Loading...</span>
+          {:else}
+            <span class="placeholder">No avatar</span>
+          {/if}
+
+          {#each user.profile.links as link}
+            <a
+              href={link.url}
+              target={link.external ? "_blank" : "_self"}
+              rel={link.external ? "noopener noreferrer" : undefined}
+            >
+              {link.label}
+            </a>
+          {/each}
+        </section>
+      {:elif user?.guest}
+        <section class="guest">
+          <h2>Welcome, {user.name}</h2>
+
+          {#each guestItems.filter(item => item.visible) as item}
+            <article data-id={item.id}>
+              <h3>{item.title}</h3>
+              <p>{item.description ?? "No description"}</p>
+            </article>
+          {/each}
+        </section>
+      {:else}
+        <section class="logged-out">
+          <h2>Please sign in</h2>
+          <p>{message ?? "You are not currently signed in."}</p>
+        </section>
+      {/if}
+
+      {#each items.filter(item => item.visible) as item}
+        <article
+          class="item {item.featured ? 'featured' : ''}"
+          data-id={item.id}
+          data-index={items.indexOf(item)}
+          aria-label="Item {item.name}"
+        >
+          <header>
+            <h2>{item.name}</h2>
+
+            {#if item.featured}
+              <span class="badge">Featured</span>
+            {/if}
+          </header>
+
+          <div class="content">
+            {item.description ?? "No description"}
+
+            {foo({
+              item,
+              metadata: {
+                created: item.createdAt,
+                tags: item.tags ?? [],
+                nested: {
+                  value: "}"
+                }
+              }
+            })}
+
+            {#each item.tags ?? [] as tag}
+              <span class="tag">{tag}</span>
+            {/each}
+          </div>
+
+          <footer>
+            <button
+              disabled={item.disabled}
+              class="button {item.loading ? 'loading' : ''}"
+              aria-label="Open {item.name}"
+            >
+              {item.loading ? "Loading..." : "Open"}
+            </button>
+          </footer>
+        </article>
+      {/each}
+    </section>
+
+    <section id="expressions">
+      {"}"}
+      {'}'}
+      {"hello } world"}
+      {'hello { world'}
+      {"quotes: \"double\" and 'single'"}
+      {'quotes: \'single\' and "double"'}
+
+      {foo("}", "{", "(", "[", "]", ")", "'")}
+      {bar({ a: "}", b: '}', c: "{", d: [1, 2, 3] })}
+
+      {a < b}
+      {a > b}
+      {a <= b}
+      {a >= b}
+      {a === b}
+      {a !== b}
+      {a && b || c}
+      {a ?? b}
+      {condition ? foo() : bar()}
+
+      {foo(
+        bar(
+          baz({
+            a: [1, 2, { value: "}" }],
+            b: {
+              nested: {
+                value: "{"
+              }
+            }
+          })
+        )
+      )}
+
+      {(() => {
+        const value = {
+          foo: [
+            1,
+            2,
+            3,
+            {
+              bar: "}"
+            }
+          ]
+        };
+
+        return value;
+      })()}
+
+      {`plain template`}
+      {`template with ${name}`}
+      {`template with ${foo("}")} and ${bar("{")}`}
+      {`outer ${foo({
+        a: "}",
+        b: '}',
+        c: `inner ${bar({
+          x: "}",
+          y: { z: 1 }
+        })}`,
+        d: { not: "a template" }
+      })} middle ${`deep ${baz({ q: '}' })} end`} tail`}
+
+      {foo(`hello ${user.name}`)}
+      {foo(`hello ${bar(`nested ${baz()}`)}`)}
+
+      {[
+        {
+          name: "one",
+          value: [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          name: "two",
+          value: {
+            nested: {
+              deep: {
+                value: "}"
+              }
+            }
+          }
+        }
+      ]}
+    </section>
+
+    <section id="attributes">
+      <input
+        type="text"
+        name="username"
+        value={form.username}
+        placeholder="Hello {user.name}"
+        aria-label="{form.username ?? "Username"}"
+        class="input {form.invalid ? 'invalid' : 'valid'}"
+        required
+        disabled={form.disabled}
+      />
+
+      <button
+        class={selected ? "selected" : "normal"}
+        title="Selected: {selected}"
+        data-value={foo({ value: "}" })}
+        disabled
+      >
+        {selected ? "Selected" : "Select"}
+      </button>
+
+      <div
+        class="outer {foo.bar}"
+        data-one="a {b} c {d}"
+        data-two={foo.bar}
+        data-three="x {foo({ nested: true })} y"
+        data-four={foo(`hello ${name}`)}
+        readonly
+      >
+        <span>{value}</span>
+      </div>
+    </section>
+
+    <section id="nesting">
+      <div>
+        <div>
+          <div>
+            <div>
+              <span>
+                <strong>
+                  {deeply.nested.value}
+                </strong>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {#if outer}
+        <div>
+          {#each outer.items as item}
+            <section>
+              {#if item.visible}
+                <p>{item.name}</p>
+              {:else}
+                <p>{item.hiddenName}</p>
+              {/if}
+            </section>
+          {/each}
+        </div>
+      {:else}
+        <div>
+          {#each fallback as item}
+            <p>{item}</p>
+          {/each}
+        </div>
+      {/if}
+    </section>
+
+    <section id="mixed">
+      Before {first} middle {second} after.
+
+      <div>
+        Start
+        {foo({ value: "}" })}
+        <span>
+          {bar(`value ${baz()}`)}
+        </span>
+        End
+      </div>
+
+      {#each data as entry}
+        Before {entry.name}
+
+        <div
+          class="entry {entry.className}"
+          data-value={entry.value}
+        >
+          {#if entry.active}
+            <span>{entry.name}</span>
+          {:elif entry.pending}
+            <span>Pending: {entry.name}</span>
+          {:else}
+            <span>Inactive: {entry.name}</span>
+          {/if}
+
+          {#each entry.children as child}
+            <div class="child {child.className}">
+              {child.value}
+            </div>
+          {/each}
+        </div>
+
+        After {entry.name}
+      {/each}
+    </section>
+
+    <section id="brutal">
+      {foo({
+        a: {
+          b: {
+            c: [
+              {
+                d: [
+                  1,
+                  2,
+                  3,
+                  {
+                    e: "}"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      })}
+
+      {`level-one ${foo({
+        a: `level-two ${bar({
+          b: `level-three ${baz({
+            c: "}"
+          })}`
+        })}`
+      })} end`}
+
+      {condition
+        ? foo({
+            value: `hello ${bar("}")}`
+          })
+        : bar({
+            value: {
+              nested: [1, 2, 3]
+            }
+          })}
+
+      {(() => ({
+        a: [
+          {
+            b: {
+              c: `hello ${foo({
+                x: "}",
+                y: [1, 2, 3]
+              })}`
+            }
+          }
+        ]
+      }))()}
+    </section>
+  </main>
+
+  <footer class="footer {footer.className}">
+    <p>{copyright}</p>
+    <p>{`© ${year} ${company.name}`}</p>
+
+    {#if footer.links?.length}
+      <nav>
+        {#each footer.links as link}
+          <a href={link.url}>{link.label}</a>
+        {/each}
+      </nav>
+    {:else}
+      <span>No links</span>
+    {/if}
+  </footer>
+</div>

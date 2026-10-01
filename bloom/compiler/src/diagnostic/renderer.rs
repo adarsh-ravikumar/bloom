@@ -1,7 +1,7 @@
 use core::fmt;
 
 use crate::{
-    common::{IOFile, Span},
+    common::{Source, Span},
     diagnostic::{
         Diagnostic, DiagnosticSeverity, Label, diagnostic::LabelKind,
     },
@@ -9,7 +9,7 @@ use crate::{
 };
 
 pub struct DiagnosticRenderer<'a> {
-    file: &'a IOFile,
+    source: &'a Source,
     line_num_len: usize,
 }
 
@@ -30,9 +30,9 @@ struct DiagnosticSpan {
 }
 
 impl<'a> DiagnosticRenderer<'a> {
-    pub fn new(file: &'a IOFile) -> Self {
+    pub fn new(source: &'a Source) -> Self {
         Self {
-            file,
+            source,
             line_num_len: 0,
         }
     }
@@ -66,7 +66,7 @@ impl<'a> DiagnosticRenderer<'a> {
     }
 
     fn build_loc_info(&self, diag: &Diagnostic) -> String {
-        let (line, col) = self.file.line_col_from_index(diag.location.start);
+        let (line, col) = self.source.line_col_from_index(diag.location.start);
 
         let spaces = " ".repeat(self.line_num_len + 1);
         format!(
@@ -74,7 +74,7 @@ impl<'a> DiagnosticRenderer<'a> {
             Style::BOLD,
             Style::BRIGHT_BLACK,
             Style::RESET,
-            self.file.path.display(),
+            self.source.from.display(),
             line,
             col,
             Style::BOLD,
@@ -83,35 +83,36 @@ impl<'a> DiagnosticRenderer<'a> {
     }
 
     fn break_span(&self, span: Span) -> Vec<DiagnosticSpan> {
-        let (start_line, start_col) = self.file.line_col_from_index(span.start);
+        let (start_line, start_col) =
+            self.source.line_col_from_index(span.start);
         let (mut end_line, mut end_col) =
-            self.file.line_col_from_index(span.end);
+            self.source.line_col_from_index(span.end);
 
         if end_col == 1 && end_line - start_line == 1 {
             end_line = start_line;
-            end_col = span.start - self.file.line_starts[start_line - 1] + 1;
+            end_col = span.start - self.source.line_starts[start_line - 1] + 1;
         }
 
         if start_line == end_line {
             vec![DiagnosticSpan {
-                line: self.file.line(start_line).replace("\n", " "),
+                line: self.source.line(start_line).replace("\n", " "),
                 line_num: start_line,
                 start_col,
                 end_col,
             }]
         } else {
             let start_line_end =
-                span.start - self.file.line_starts[start_line - 1] + 1;
+                span.start - self.source.line_starts[start_line - 1] + 1;
 
             vec![
                 DiagnosticSpan {
-                    line: self.file.line(start_line).replace("\n", " "),
+                    line: self.source.line(start_line).replace("\n", " "),
                     line_num: start_line,
                     start_col,
                     end_col: start_line_end,
                 },
                 DiagnosticSpan {
-                    line: self.file.line(end_line).replace("\n", " "),
+                    line: self.source.line(end_line).replace("\n", " "),
                     line_num: end_line,
                     start_col: 0,
                     end_col,
@@ -313,7 +314,7 @@ impl<'a> DiagnosticRenderer<'a> {
         let mut max: usize = 0;
 
         for label in diag.labels.iter() {
-            let (line, _) = self.file.line_col_from_index(label.span.end);
+            let (line, _) = self.source.line_col_from_index(label.span.end);
             if line > max {
                 max = line;
             }

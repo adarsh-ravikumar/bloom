@@ -16,8 +16,16 @@ pub enum FragmentNode {
     Element(Element),
     Text(Span),
     Expression(Span),
-    ControlBlock(ControlBlock),
+    If(IfControl),
+    Each(EachControl),
 }
+
+#[derive(Debug, Clone)]
+pub enum Part {
+    Text(Span),
+    Expression(Span),
+}
+pub type Parts = Vec<Part>;
 
 #[derive(Debug, Clone)]
 pub struct Element {
@@ -27,10 +35,24 @@ pub struct Element {
 }
 
 #[derive(Debug, Clone)]
-pub struct ControlBlock {
-    pub control_type: Span,
+pub struct IfControl {
+    pub condition: Span,
+    pub body: Fragment,
+    pub elifs: Vec<ElifControl>,
+    pub else_body: Option<Fragment>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ElifControl {
+    pub condition: Span,
+    pub body: Fragment,
+}
+
+#[derive(Debug, Clone)]
+pub struct EachControl {
     pub expression: Span,
-    pub fragment: Fragment,
+    pub context: Span,
+    pub body: Fragment,
 }
 
 // Attribute
@@ -42,6 +64,7 @@ pub struct Attribute {
 
 #[derive(Debug, Clone)]
 pub enum AttributeValue {
-    Parts(Fragment),
+    Expression(Span),
+    Parts(Parts),
     True,
 }

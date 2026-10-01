@@ -1,6 +1,6 @@
 use crate::parser::{
     Parser,
-    node::{AttributeValue, Fragment, FragmentNode},
+    nodes::{AttributeValue, Fragment, FragmentNode, Part},
 };
 
 impl<'a> Parser<'a> {
@@ -13,7 +13,7 @@ impl<'a> Parser<'a> {
                     println!("{base_indent}tag");
                     print!(
                         "{base_indent}{ch}  name: {}\n{base_indent}{ch}  attribs: [",
-                        self.file.view_span(elem.name)
+                        self.src.view_span(elem.name)
                     );
 
                     if elem.attributes.is_empty() {
@@ -25,25 +25,45 @@ impl<'a> Parser<'a> {
                                 AttributeValue::True => {
                                     print!(
                                         "{base_indent}   {},\n",
-                                        self.file.view_span(attrib.name)
+                                        self.src.view_span(attrib.name)
                                     )
                                 }
 
                                 AttributeValue::Parts(parts) => {
                                     print!(
                                         "{base_indent}   {}:\n",
-                                        self.file.view_span(attrib.name)
+                                        self.src.view_span(attrib.name)
                                     );
-                                    self.display_fragment(
-                                        parts,
-                                        level + 3,
-                                        ' ',
+
+                                    for part in parts {
+                                        match part {
+                                            Part::Text(text) => {
+                                                println!(
+                                                    "{base_indent}      text: {:?}",
+                                                    self.src.view_span(text)
+                                                );
+                                            }
+                                            Part::Expression(expr) => {
+                                                println!(
+                                                    "{base_indent}      expr: {:?}",
+                                                    self.src.view_span(expr)
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+
+                                AttributeValue::Expression(expr) => {
+                                    print!(
+                                        "{base_indent}   {}: {}\n",
+                                        self.src.view_span(attrib.name),
+                                        self.src.view_span(expr)
                                     );
                                 }
                             }
                         }
 
-                        println!("{base_indent}]");
+                        println!("{base_indent}   ]");
                     }
 
                     if let Some(frag) = &elem.fragment {
@@ -54,35 +74,67 @@ impl<'a> Parser<'a> {
                 FragmentNode::Text(text) => {
                     println!(
                         "{base_indent}text: {:?}",
-                        self.file.view_span(text)
+                        self.src.view_span(text)
                     );
                 }
 
                 FragmentNode::Expression(expr) => {
                     println!(
                         "{base_indent}expr: {:?}",
-                        self.file.view_span(expr)
+                        self.src.view_span(expr)
                     );
                 }
 
-                FragmentNode::ControlBlock(block) => {
+                // FragmentNode::Control(block) => {
+                //     // println!(
+                //     //     "{base_indent}{}: {:?}",
+                //     //     self.src.view_span(block.control_type),
+                //     //     self.src.view_span(block.expression),
+                //     // );
+                //     // self.display_fragment(&block.fragment, level + 1, '|');
+                // }
+                FragmentNode::If(if_block) => {
                     println!(
-                        "{base_indent}{}: {:?}",
-                        self.file.view_span(block.control_type),
-                        self.file.view_span(block.expression),
+                        "{base_indent}if: {}",
+                        self.src.view_span(if_block.condition)
                     );
-                    self.display_fragment(&block.fragment, level + 1, '|');
+
+                    self.display_fragment(&if_block.body, level + 1, '|');
+
+                    for elif in &if_block.elifs {
+                        println!(
+                            "{base_indent}elif: {}",
+                            self.src.view_span(elif.condition)
+                        );
+
+                        self.display_fragment(&elif.body, level + 1, '|');
+                    }
+
+                    if let Some(else_body) = &if_block.else_body {
+                        println!("{base_indent}else");
+                        self.display_fragment(&else_body, level + 1, '|');
+                    }
+                }
+
+                FragmentNode::Each(each_block) => {
+                    println!("{base_indent}each:",);
+                    println!(
+                        "{base_indent}|  expr: {}",
+                        self.src.view_span(each_block.expression)
+                    );
+                    println!(
+                        "{base_indent}|  context: {}",
+                        self.src.view_span(each_block.context)
+                    );
+
+                    self.display_fragment(&each_block.body, level + 2, '|');
                 }
             }
         }
     }
 
     pub fn display(&self) {
-        let Some(root) = &self.root else {
-            return;
-        };
-
-        let Some(fragment) = &root.fragment else {
+        let Some(fragment) = &self.root.fragment else {
             return;
         };
 

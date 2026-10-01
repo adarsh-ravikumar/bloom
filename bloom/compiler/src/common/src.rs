@@ -3,34 +3,61 @@ use std::path::PathBuf;
 
 use crate::common::Span;
 
-pub struct IOFile {
-    pub path: PathBuf,
+pub enum SourceFrom {
+    Path(PathBuf),
+    String,
+}
+
+impl SourceFrom {
+    pub fn display(&self) -> String {
+        match self {
+            Self::Path(path) => format!("{}", path.display()),
+            Self::String => "string".into(),
+        }
+    }
+}
+
+pub struct Source {
+    pub from: SourceFrom,
     pub src: Vec<u8>,
     pub line_starts: Vec<usize>,
 }
 
-impl IOFile {
+impl Source {
     pub fn from_path(path: impl Into<PathBuf>) -> Result<Self, String> {
         let path = path.into();
 
         let src = fs::read_to_string(&path).map_err(|why| {
-            format!("Failed to open file {}: {}", path.display(), why)
+            format!("Failed to open source {}: {}", path.display(), why)
         })?;
 
         let mut src = src.into_bytes();
         let line_starts = Self::compute_line_starts(&src);
 
-        src.push(b'\n');
+        src.push(0);
 
-        Ok(IOFile {
-            path,
+        Ok(Self {
+            from: SourceFrom::Path(path),
             src,
             line_starts,
         })
     }
 
-    pub fn get(&self, idx: usize) -> Option<u8> {
-        self.src.get(idx).map(|ch| ch.clone())
+    pub fn from_string(src: impl Into<String>) -> Result<Self, String> {
+        let mut src = src.into().into_bytes();
+        let line_starts = Self::compute_line_starts(&src);
+
+        src.push(0);
+
+        Ok(Self {
+            from: SourceFrom::String,
+            src,
+            line_starts,
+        })
+    }
+
+    pub fn get(&self, idx: usize) -> u8 {
+        self.src.get(idx).copied().unwrap_or(0u8)
     }
 
     fn compute_line_starts(src: &Vec<u8>) -> Vec<usize> {

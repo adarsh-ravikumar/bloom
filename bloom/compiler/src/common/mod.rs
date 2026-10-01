@@ -1,5 +1,5 @@
-mod io;
 mod span;
+mod src;
 
-pub use io::IOFile;
 pub use span::{ERRONEOUS_SPAN, Span};
+pub use src::Source;
