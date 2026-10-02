@@ -296,14 +296,16 @@ impl<'a> DiagnosticRenderer<'a> {
 
         for note in &diag.notes {
             res.push_str(&format!(
-                "{} {}{} ={}{} note:{} {}\n",
+                "{} {}{} ={}{}{} note:{} {}{}\n",
                 " ".repeat(self.line_num_len),
                 Style::BOLD,
                 Style::BRIGHT_BLACK,
                 Style::RESET,
+                Style::BRIGHT_CYAN,
                 Style::BOLD,
                 Style::RESET_BOLD,
                 note,
+                Style::RESET,
             ));
         }
 
@@ -325,6 +327,8 @@ impl<'a> DiagnosticRenderer<'a> {
 
     pub fn render(&mut self, diagnostics: &mut Vec<Diagnostic>) -> String {
         let mut res = String::new();
+
+        diagnostics.sort_by_key(|diag| diag.location.start);
 
         for diag in diagnostics.iter_mut() {
             diag.labels.sort_by_key(|label| label.span.start);

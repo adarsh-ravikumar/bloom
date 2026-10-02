@@ -16,13 +16,11 @@ fn main() {
     let mut parser = Parser::new(&source);
 
     parser.parse();
-    parser.display();
 
-    // let _ = match parser.parse() {
-    //     Ok(_) => parser.display(),
-    //     Err(diag) => {
-    //         let mut diag = vec![diag];
-    //         println!("{}", renderer.render(&mut diag))
-    //     }
-    // };
+    if !parser.diagnostics.is_empty() {
+        println!("{}", renderer.render(&mut parser.diagnostics));
+        println!("\nERRONEOUS TREE:");
+    }
+
+    parser.display();
 }

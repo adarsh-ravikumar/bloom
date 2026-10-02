@@ -14,18 +14,47 @@ impl DiagnosticSeverity {
     }
 }
 
+pub enum IdentType {
+    Attribute,
+    Tag,
+    EachContext,
+}
+
 pub enum DiagnosticClass {
-    UnexpectedChar,
-    InvalidIdentifier,
-    UnmatchedTag,
+    InvalidIdentifier(IdentType),
+    MismatchedTag,
+    ExpectedToken,
+    UnclosedTag,
+    StrayClosing,
+    UnclosedExpression,
+    UnclosedQuotedValue,
+    UnclosedComment,
+    UnclosedControlHeader,
+    UnclosedControl,
+    ExpectedControlEnd,
+    MismatchedControl,
+    UnknownControlCase,
+    UnexpectedControlExpression,
 }
 
 impl DiagnosticClass {
     pub fn code(&self) -> &'static str {
         match self {
-            Self::UnexpectedChar => "E001",
-            Self::InvalidIdentifier => "E002",
-            Self::UnmatchedTag => "E003",
+            // 0xx => Parser Errors
+            Self::InvalidIdentifier(_) => "E001",
+            Self::ExpectedToken => "E002",
+            Self::MismatchedTag => "E003",
+            Self::UnclosedTag => "E004",
+            Self::StrayClosing => "E005",
+            Self::UnclosedExpression => "E006",
+            Self::UnclosedQuotedValue => "E007",
+            Self::UnclosedComment => "E008",
+            Self::UnclosedControlHeader => "E009",
+            Self::UnclosedControl => "E010",
+            Self::MismatchedControl => "E011",
+            Self::ExpectedControlEnd => "E012",
+            Self::UnknownControlCase => "E013",
+            Self::UnexpectedControlExpression => "E014",
         }
     }
 }

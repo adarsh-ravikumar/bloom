@@ -60,6 +60,11 @@ impl Source {
         self.src.get(idx).copied().unwrap_or(0u8)
     }
 
+    pub fn eof(&self) -> Span {
+        let eof = self.src.len() - 1;
+        Span::new(eof, eof)
+    }
+
     fn compute_line_starts(src: &Vec<u8>) -> Vec<usize> {
         let mut starts: Vec<usize> = vec![0];
 

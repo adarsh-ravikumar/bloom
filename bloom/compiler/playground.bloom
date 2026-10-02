@@ -1,394 +1,540 @@
+<!-- ============================================================
+     1. TOP-LEVEL TEXT / WHITESPACE
+     ============================================================ -->
+
+hello
+world
+
+plain text with punctuation ! @ # $ % ^ & * ( ) [ ] = + - _ .
+
+
+<!-- ============================================================
+     2. SIMPLE ELEMENTS
+     ============================================================ -->
+
+<div></div>
+
+<br />
+
+<input disabled />
+
+<section id="main" class="container" data-value="hello">
+    content
+</section>
+
+
+<!-- ============================================================
+     3. IDENTIFIER VARIANTS
+     ============================================================ -->
+
+<my-component></my-component>
+
+<foo-bar></foo-bar>
+
+<_private></_private>
+
+<component123></component123>
+
+<div data-id_123="test"></div>
+
+
+<!-- ============================================================
+     4. ATTRIBUTES
+     ============================================================ -->
+
 <div
-  id="app"
-  class="page {theme.pageClass}"
-  data-user={user.id}
-  data-state="hello {state.name} {state.value ?? "unknown"}"
-  aria-label="{label}"
-  hidden
->
-  <header class="header {header.className}">
-    <h1>{user.profile?.displayName ?? "Anonymous"}</h1>
+    disabled
+    hidden
+    autofocus
+    class="container"
+    id="main"
+    data-value="hello"
+    aria-label="hello world"
+></div>
 
-    <nav aria-label="Main navigation">
-      <a href={routes.home}>Home</a>
-      <a href={routes.profile}>{user.name}</a>
-      <a
-        href={routes.settings}
-        class="link {active === 'settings' ? 'active' : ''}"
-        title="Settings for {user.name}"
-      >
-        Settings
-      </a>
-    </nav>
-  </header>
+<div
+    title="hello {user.name}"
+    class="{theme.className}"
+    data-value={user.id}
+    aria-label="{label}"
+></div>
 
-  <main>
-    <section
-      id="dashboard"
-      class="dashboard {layout.className}"
-      data-count={items.length}
-      data-label="Items: {items.length}"
-    >
-      {items.length === 0 ? "No items" : `${items.length} items`}
-
-      {foo({
-        user,
-        config: {
-          theme: "dark",
-          values: [1, 2, 3, { nested: true }]
+<div
+    title="hello {user.name} {user.profile.name}"
+    data-value={foo({
+        a: 1,
+        b: "}",
+        c: {
+            nested: true
         }
-      })}
+    })}
+></div>
 
-      {#if user && user.profile?.active}
-        <section class="profile {user.profile.className}">
-          <h2>{user.profile.name}</h2>
-          <p>{user.profile.bio ?? "No biography available."}</p>
 
-          {#if user.profile.avatar}
-            <img
-              src={user.profile.avatar}
-              alt="Avatar of {user.profile.name}"
-            />
-          {:elif loading}
-            <span class="loading">Loading...</span>
-          {:else}
-            <span class="placeholder">No avatar</span>
-          {/if}
+<!-- ============================================================
+     5. TEXT + EXPRESSIONS
+     ============================================================ -->
 
-          {#each user.profile.links as link}
-            <a
-              href={link.url}
-              target={link.external ? "_blank" : "_self"}
-              rel={link.external ? "noopener noreferrer" : undefined}
-            >
-              {link.label}
-            </a>
-          {/each}
-        </section>
-      {:elif user?.guest}
-        <section class="guest">
-          <h2>Welcome, {user.name}</h2>
+<p>Hello {user.name}!</p>
 
-          {#each guestItems.filter(item => item.visible) as item}
-            <article data-id={item.id}>
-              <h3>{item.title}</h3>
-              <p>{item.description ?? "No description"}</p>
-            </article>
-          {/each}
-        </section>
-      {:else}
-        <section class="logged-out">
-          <h2>Please sign in</h2>
-          <p>{message ?? "You are not currently signed in."}</p>
-        </section>
-      {/if}
+<p>
+    Hello
+    {user.firstName}
+    {user.lastName}
+    !
+</p>
 
-      {#each items.filter(item => item.visible) as item}
-        <article
-          class="item {item.featured ? 'featured' : ''}"
-          data-id={item.id}
-          data-index={items.indexOf(item)}
-          aria-label="Item {item.name}"
-        >
-          <header>
-            <h2>{item.name}</h2>
+<p>{foo()}</p>
 
-            {#if item.featured}
-              <span class="badge">Featured</span>
-            {/if}
-          </header>
+<p>{foo(bar)}</p>
 
-          <div class="content">
-            {item.description ?? "No description"}
+<p>{foo({ a: 1, b: [1, 2, 3] })}</p>
 
-            {foo({
-              item,
-              metadata: {
-                created: item.createdAt,
-                tags: item.tags ?? [],
-                nested: {
-                  value: "}"
-                }
-              }
-            })}
+<p>{user?.profile?.name ?? "Anonymous"}</p>
 
-            {#each item.tags ?? [] as tag}
-              <span class="tag">{tag}</span>
-            {/each}
-          </div>
+<p>{condition ? "yes" : "no"}</p>
 
-          <footer>
-            <button
-              disabled={item.disabled}
-              class="button {item.loading ? 'loading' : ''}"
-              aria-label="Open {item.name}"
-            >
-              {item.loading ? "Loading..." : "Open"}
-            </button>
-          </footer>
-        </article>
-      {/each}
-    </section>
 
-    <section id="expressions">
-      {"}"}
-      {'}'}
-      {"hello } world"}
-      {'hello { world'}
-      {"quotes: \"double\" and 'single'"}
-      {'quotes: \'single\' and "double"'}
+<!-- ============================================================
+     6. QUOTED ATTRIBUTE PARTS
+     ============================================================ -->
 
-      {foo("}", "{", "(", "[", "]", ")", "'")}
-      {bar({ a: "}", b: '}', c: "{", d: [1, 2, 3] })}
+<div
+    class="prefix-{user.name}-suffix"
+    title="{foo()} {bar()} static"
+    data-test="hello {user.name} {user.id} world"
+    aria-label='hello {user.name} world'
+></div>
 
-      {a < b}
-      {a > b}
-      {a <= b}
-      {a >= b}
-      {a === b}
-      {a !== b}
-      {a && b || c}
-      {a ?? b}
-      {condition ? foo() : bar()}
 
-      {foo(
-        bar(
-          baz({
-            a: [1, 2, { value: "}" }],
-            b: {
-              nested: {
-                value: "{"
-              }
-            }
-          })
-        )
-      )}
+<!-- ============================================================
+     7. EMBEDDED JS STRESS
+     ============================================================ -->
 
-      {(() => {
-        const value = {
-          foo: [
-            1,
-            2,
-            3,
-            {
-              bar: "}"
-            }
-          ]
-        };
-
-        return value;
-      })()}
-
-      {`plain template`}
-      {`template with ${name}`}
-      {`template with ${foo("}")} and ${bar("{")}`}
-      {`outer ${foo({
-        a: "}",
-        b: '}',
-        c: `inner ${bar({
-          x: "}",
-          y: { z: 1 }
-        })}`,
-        d: { not: "a template" }
-      })} middle ${`deep ${baz({ q: '}' })} end`} tail`}
-
-      {foo(`hello ${user.name}`)}
-      {foo(`hello ${bar(`nested ${baz()}`)}`)}
-
-      {[
-        {
-          name: "one",
-          value: [
-            1,
-            2,
-            3
-          ]
-        },
-        {
-          name: "two",
-          value: {
-            nested: {
-              deep: {
-                value: "}"
-              }
-            }
-          }
-        }
-      ]}
-    </section>
-
-    <section id="attributes">
-      <input
-        type="text"
-        name="username"
-        value={form.username}
-        placeholder="Hello {user.name}"
-        aria-label="{form.username ?? "Username"}"
-        class="input {form.invalid ? 'invalid' : 'valid'}"
-        required
-        disabled={form.disabled}
-      />
-
-      <button
-        class={selected ? "selected" : "normal"}
-        title="Selected: {selected}"
-        data-value={foo({ value: "}" })}
-        disabled
-      >
-        {selected ? "Selected" : "Select"}
-      </button>
-
-      <div
-        class="outer {foo.bar}"
-        data-one="a {b} c {d}"
-        data-two={foo.bar}
-        data-three="x {foo({ nested: true })} y"
-        data-four={foo(`hello ${name}`)}
-        readonly
-      >
-        <span>{value}</span>
-      </div>
-    </section>
-
-    <section id="nesting">
-      <div>
-        <div>
-          <div>
-            <div>
-              <span>
-                <strong>
-                  {deeply.nested.value}
-                </strong>
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {#if outer}
-        <div>
-          {#each outer.items as item}
-            <section>
-              {#if item.visible}
-                <p>{item.name}</p>
-              {:else}
-                <p>{item.hiddenName}</p>
-              {/if}
-            </section>
-          {/each}
-        </div>
-      {:else}
-        <div>
-          {#each fallback as item}
-            <p>{item}</p>
-          {/each}
-        </div>
-      {/if}
-    </section>
-
-    <section id="mixed">
-      Before {first} middle {second} after.
-
-      <div>
-        Start
-        {foo({ value: "}" })}
-        <span>
-          {bar(`value ${baz()}`)}
-        </span>
-        End
-      </div>
-
-      {#each data as entry}
-        Before {entry.name}
-
-        <div
-          class="entry {entry.className}"
-          data-value={entry.value}
-        >
-          {#if entry.active}
-            <span>{entry.name}</span>
-          {:elif entry.pending}
-            <span>Pending: {entry.name}</span>
-          {:else}
-            <span>Inactive: {entry.name}</span>
-          {/if}
-
-          {#each entry.children as child}
-            <div class="child {child.className}">
-              {child.value}
-            </div>
-          {/each}
-        </div>
-
-        After {entry.name}
-      {/each}
-    </section>
-
-    <section id="brutal">
-      {foo({
-        a: {
-          b: {
-            c: [
-              {
-                d: [
-                  1,
-                  2,
-                  3,
-                  {
-                    e: "}"
-                  }
-                ]
-              }
+<div
+    data-value={foo({
+        user: user,
+        metadata: {
+            source: "profile } page",
+            nested: [
+                { value: "}" },
+                { value: '}' },
+                { deeper: { value: "still } a string" } }
             ]
-          }
         }
-      })}
-
-      {`level-one ${foo({
-        a: `level-two ${bar({
-          b: `level-three ${baz({
-            c: "}"
-          })}`
-        })}`
-      })} end`}
-
-      {condition
-        ? foo({
-            value: `hello ${bar("}")}`
-          })
-        : bar({
-            value: {
-              nested: [1, 2, 3]
-            }
-          })}
-
-      {(() => ({
-        a: [
-          {
-            b: {
-              c: `hello ${foo({
-                x: "}",
-                y: [1, 2, 3]
-              })}`
-            }
-          }
-        ]
-      }))()}
-    </section>
-  </main>
-
-  <footer class="footer {footer.className}">
-    <p>{copyright}</p>
-    <p>{`© ${year} ${company.name}`}</p>
-
-    {#if footer.links?.length}
-      <nav>
-        {#each footer.links as link}
-          <a href={link.url}>{link.label}</a>
-        {/each}
-      </nav>
-    {:else}
-      <span>No links</span>
-    {/if}
-  </footer>
+    })}
+>
+    {
+        foo(
+            bar(
+                baz({
+                    a: [1, 2, 3],
+                    b: { x: "{", y: "}" },
+                    c: "hello"
+                })
+            )
+        )
+    }
 </div>
+
+<p>
+    {`simple template`}
+    {`template with } braces`}
+    {`template ${user.name}`}
+    {`template ${foo({ value: "}" })}`}
+    {`outer ${`inner ${foo({ x: "}" })}`} tail`}
+</p>
+
+
+<!-- ============================================================
+     8. COMMENTS
+     ============================================================ -->
+
+<!-- simple comment -->
+
+<!--
+    multiline comment
+-->
+
+<div>
+    <!-- comment between elements -->
+    <span>hello</span>
+    <!-- another comment -->
+</div>
+
+
+<!-- ============================================================
+     9. IF / ELIF / ELSE — TOP LEVEL
+     ============================================================ -->
+
+{#if user.isAdmin}
+    Admin
+{:elif user.isModerator}
+    Moderator
+{:elif user.isStaff}
+    Staff
+{:else}
+    User
+{/if}
+
+
+<!-- ============================================================
+     10. IF — NO ELSE / NO ELIF
+     ============================================================ -->
+
+{#if user.isLoggedIn}
+    Welcome back!
+{/if}
+
+
+<!-- ============================================================
+     11. IF / ELIF / ELSE — INSIDE ELEMENT
+     ============================================================ -->
+
+<div class="account">
+    <h1>{user.name}</h1>
+
+    {#if user.isPremium}
+        <span class="badge">Premium</span>
+    {:elif user.isTrial}
+        <span class="badge">Trial</span>
+    {:else}
+        <span class="badge">Free</span>
+    {/if}
+</div>
+
+
+<!-- ============================================================
+     12. NESTED CONTROL BLOCKS
+     ============================================================ -->
+
+{#if user.loggedIn}
+    <section>
+
+        {#if user.isAdmin}
+            <p>Admin</p>
+        {:elif user.isModerator}
+            <p>Moderator</p>
+        {:else}
+            <p>User</p>
+        {/if}
+
+    </section>
+{:elif user.isGuest}
+    <p>Guest</p>
+{:else}
+    <p>Please log in</p>
+{/if}
+
+
+<!-- ============================================================
+     13. CONTROL INSIDE CONTROL INSIDE ELEMENT
+     ============================================================ -->
+
+{#if app.ready}
+    <main>
+
+        {#if user}
+            <div class="user">
+
+                {#if user.profile}
+                    <section>
+                        <h2>{user.profile.name}</h2>
+                    </section>
+                {:elif user.loading}
+                    <span>Loading...</span>
+                {:else}
+                    <span>No profile</span>
+                {/if}
+
+            </div>
+        {:elif app.loading}
+            <p>Loading user...</p>
+        {:else}
+            <p>No user</p>
+        {/if}
+
+    </main>
+{:else}
+    <p>Application unavailable.</p>
+{/if}
+
+
+<!-- ============================================================
+     14. EACH
+     ============================================================ -->
+
+{#each users in users}
+    <p>{users.name}</p>
+{/each}
+
+
+{#each user in users}
+    <div class="user">
+        <span>{user.name}</span>
+    </div>
+{/each}
+
+
+<!-- ============================================================
+     15. EACH WITH COMPLEX EXPRESSION
+     ============================================================ -->
+
+{#each user in users.filter(user => user.active)}
+    <p>{user.name}</p>
+{/each}
+
+
+{#each item in items.map(item => ({
+    id: item.id,
+    name: item.name,
+    value: item.value
+}))}
+    <div>{item.name}</div>
+{/each}
+
+
+<!-- ============================================================
+     16. EACH NESTED IN IF
+     ============================================================ -->
+
+{#if users.length > 0}
+    <ul>
+        {#each user in users}
+            <li>
+                {user.name}
+
+                {#if user.isAdmin}
+                    <strong>Admin</strong>
+                {:elif user.isModerator}
+                    <strong>Moderator</strong>
+                {:else}
+                    <span>User</span>
+                {/if}
+            </li>
+        {/each}
+    </ul>
+{:else}
+    <p>No users.</p>
+{/if}
+
+
+<!-- ============================================================
+     17. IF NESTED IN EACH
+     ============================================================ -->
+
+{#each item in items}
+    {#if item.visible}
+        <article>
+            <h2>{item.title}</h2>
+            <p>{item.description}</p>
+        </article>
+    {:else}
+        <span>Hidden</span>
+    {/if}
+{/each}
+
+
+<!-- ============================================================
+     18. DEEPLY NESTED ELEMENTS
+     ============================================================ -->
+
+<div class="root">
+    <main>
+        <section>
+            <article>
+                <header>
+                    <div>
+                        <span>
+                            <strong>
+                                Deeply nested text
+                            </strong>
+                        </span>
+                    </div>
+                </header>
+            </article>
+        </section>
+    </main>
+</div>
+
+
+<!-- ============================================================
+     19. DEEPLY NESTED ELEMENT + CONTROL + EXPRESSIONS
+     ============================================================ -->
+
+<div class="application">
+    <main>
+        {#if application.ready}
+            <section class="content">
+
+                {#each section in application.sections}
+                    <article class={section.className}>
+
+                        <header>
+                            <h2>{section.title}</h2>
+                        </header>
+
+                        {#if section.items.length > 0}
+                            <div class="items">
+
+                                {#each item in section.items}
+                                    <div class="item">
+                                        <span>{item.name}</span>
+
+                                        {#if item.active}
+                                            <strong>Active</strong>
+                                        {:elif item.pending}
+                                            <strong>Pending</strong>
+                                        {:else}
+                                            <strong>Inactive</strong>
+                                        {/if}
+                                    </div>
+                                {/each}
+
+                            </div>
+                        {:else}
+                            <p>No items.</p>
+                        {/if}
+
+                    </article>
+                {/each}
+
+            </section>
+        {:else}
+            <section>
+                <p>Loading...</p>
+            </section>
+        {/if}
+    </main>
+</div>
+
+
+<!-- ============================================================
+     20. SELF CLOSING ELEMENTS AROUND EVERYTHING
+     ============================================================ -->
+
+<div>
+    <input disabled />
+    <input class="field" value={user.name} />
+    <br />
+    <hr />
+    <custom-component
+        foo="bar"
+        value={foo()}
+        class="{thing}"
+    />
+</div>
+
+
+<!-- ============================================================
+     21. BOOLEAN + EXPRESSION + QUOTED + MIXED ATTRIBUTES
+     ============================================================ -->
+
+<button
+    disabled
+    autofocus
+    class="button {theme.className}"
+    id={button.id}
+    title="Click {user.name}"
+    data-state={state.current}
+    aria-label="{label}"
+    onclick={() => handleClick({
+        user: user,
+        metadata: {
+            source: "button } handler",
+            nested: [{ value: "}" }, { value: '}' }]
+        }
+    })}
+>
+    Click me
+</button>
+
+
+<!-- ============================================================
+     22. EVERYTHING AT ONCE
+     ============================================================ -->
+
+{#if application.ready}
+
+    <div
+        class="application {theme.className}"
+        data-id={application.id}
+        title="Application: {application.name}"
+    >
+
+        {#each section in application.sections}
+
+            <section class={section.className}>
+
+                <header>
+                    <h2>{section.title}</h2>
+
+                    {#if section.visible}
+                        <span>Visible</span>
+                    {:elif section.loading}
+                        <span>Loading</span>
+                    {:else}
+                        <span>Hidden</span>
+                    {/if}
+                </header>
+
+                {#if section.items.length > 0}
+
+                    {#each item in section.items.filter(item => item.active)}
+
+                        <article
+                            id={item.id}
+                            class="item {item.className}"
+                            data-value={foo({
+                                item: item,
+                                text: "}",
+                                nested: {
+                                    value: "{"
+                                }
+                            })}
+                        >
+
+                            <h3>{item.name}</h3>
+
+                            <p>
+                                {item.description ?? "No description"}
+                            </p>
+
+                            {#if item.featured}
+                                <strong>Featured</strong>
+                            {:elif item.pending}
+                                <strong>Pending</strong>
+                            {:else}
+                                <span>Standard</span>
+                            {/if}
+
+                        </article>
+
+                    {/each}
+
+                {:else}
+
+                    <p>No items in {section.name}.</p>
+
+                {/if}
+
+            </section>
+
+        {/each}
+
+    </div>
+
+{:elif application.loading}
+
+    <div class="loading">
+        <span>Loading application...</span>
+    </div>
+
+{:else}
+
+    <div class="error">
+        <h1>Application unavailable</h1>
+        <p>{application.error ?? "Unknown error"}</p>
+    </div>
+
+{/if}
