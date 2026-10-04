@@ -131,7 +131,7 @@ impl<'a> Parser<'a> {
                 candidate_exists = true;
                 self.last_closed_control = closing_name;
 
-                // we push it back to the open_tags stack as the actual element
+                // we push it back to the open_tags stack as the actual widget
                 // to which the tag belongs to will consume it
                 self.open_controls.push(open);
                 break;
@@ -169,7 +169,7 @@ impl<'a> Parser<'a> {
 
         let expr_start = self.pos;
 
-        let expr = self.parse_embedded_expression(b'}');
+        let expr = self.parse_embedded_expression("}");
 
         self.consume_whitespace();
 
@@ -263,7 +263,7 @@ impl<'a> Parser<'a> {
     pub fn parse_elif(&mut self, case_start: Span) -> ElifControl {
         self.consume_whitespace();
 
-        let expr = self.parse_embedded_expression(b'}');
+        let expr = self.parse_embedded_expression("}");
 
         if expr == ERRONEOUS_SPAN {
             self.emit_expected_control_expression(case_start, "elif");
@@ -307,6 +307,8 @@ impl<'a> Parser<'a> {
                     Span::new(self.pos - 1, self.pos - 1),
                 );
             } else {
+                // TODO: The else could also mean we hit a new line, as that is
+                // a valid sync point. But, the error points to EOF
                 self.emit_unclosed_control_header(case_start, "else"); // reaches fatal EOF
             }
         }
@@ -347,7 +349,7 @@ impl<'a> Parser<'a> {
 
         let expr_start = self.pos;
 
-        let expression = self.parse_embedded_expression(b'}');
+        let expression = self.parse_embedded_expression("}");
 
         self.consume_whitespace();
 

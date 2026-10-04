@@ -6,7 +6,7 @@ impl<'a> Parser<'a> {
         // candidate in the open_tags stack that might consume it, then we
         // conclude that this is NOT a stray, and in fact belongs to the candidate.
         // this case occurs only when there is an unclosed control block as a child of
-        // an element
+        // an widget
         // `
         // <div>
         //   {#if a == b}

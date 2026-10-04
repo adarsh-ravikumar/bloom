@@ -3,6 +3,13 @@ use crate::common::Span;
 #[derive(Debug, Clone)]
 pub struct Root {
     pub fragment: Option<Fragment>,
+    pub script: Option<Script>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Script {
+    pub open: Span,
+    pub source: Span,
 }
 
 // Fragment
@@ -13,7 +20,7 @@ pub struct Fragment {
 
 #[derive(Debug, Clone)]
 pub enum FragmentNode {
-    Element(Element),
+    Widget(Widget),
     Text(Span),
     Expression(Span),
     Control(Control),
@@ -27,7 +34,7 @@ pub enum Part {
 pub type Parts = Vec<Part>;
 
 #[derive(Debug, Clone)]
-pub struct Element {
+pub struct Widget {
     pub name: Span,
     pub attributes: Vec<Attribute>,
     pub fragment: Option<Fragment>,

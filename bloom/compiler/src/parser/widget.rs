@@ -1,15 +1,16 @@
+use std::iter::Scan;
+
 use crate::{
     common::{ERRONEOUS_SPAN, Span},
-    diagnostic::{DiagnosticClass, IdentType},
     parser::{
-        Parser,
-        nodes::{Attribute, AttributeValue, Element, FragmentNode, Part},
+        Fragment, Parser, Script,
+        nodes::{Attribute, AttributeValue, FragmentNode, Part, Widget},
         parser::FragmentEnd,
     },
 };
 
 impl<'a> Parser<'a> {
-    pub fn parse_open_tag(&mut self) -> (Element, bool) {
+    pub fn parse_open_tag(&mut self) -> (Widget, bool) {
         let tag_open_pos = self.pos;
         self.eat("<");
 
@@ -22,6 +23,7 @@ impl<'a> Parser<'a> {
         self.consume_whitespace();
 
         // attribute list
+        let diag_pos_before_attribs = self.diagnostics.len();
         let attributes = self.parse_attributes();
 
         // self closing
@@ -32,32 +34,20 @@ impl<'a> Parser<'a> {
         }
 
         if !self_closing && !self.eat(">") {
-            // if we didn't eat either, we have failed to establish a boundary for the open-tag
-            // the only errors that can possibly occur between the start of a tag
-            // and the point where we identify that it has NOT been closed correctly
-            // is either an invalid tag identifier, or invalid attribute identifier / value
-            // we CANNOT guarantee that the attribute related errors are correct because no proper
-            // boundary was established for the attributes.
-            // hence, we remove all those errors
-            loop {
-                if let Some(last) = self.diagnostics.last()
-                    && matches!(
-                        last.class,
-                        DiagnosticClass::InvalidIdentifier(
-                            IdentType::Attribute
-                        )
-                    )
-                {
-                    self.diagnostics.pop();
-                } else {
-                    break;
-                }
+            // we failed to establish the opening-tag boundary.
+            // attribute diagnostics were hence producced speculatively and can no longer be
+            // trusted, because we don't know that we were actually parsing a well-delimitied
+            // attribute list. remove all errors emitted by `parse_attrbiutes`.
+
+            while self.diagnostics.len() > diag_pos_before_attribs {
+                self.diagnostics.pop();
             }
+
             self.emit_expect_open_tag_end(tag_open_pos);
         }
 
         (
-            Element {
+            Widget {
                 name,
                 attributes,
                 fragment: None,
@@ -69,7 +59,7 @@ impl<'a> Parser<'a> {
     pub fn parse_attribute_value(&mut self) -> Option<AttributeValue> {
         let expr_start = self.pos;
         if self.eat("{") {
-            let expr = self.parse_embedded_expression(b'}');
+            let expr = self.parse_embedded_expression("}");
 
             if !self.eat("}") {
                 self.emit_unclosed_expression(expr_start);
@@ -98,7 +88,7 @@ impl<'a> Parser<'a> {
                     break;
                 }
 
-                let expr = self.parse_embedded_expression(b'}');
+                let expr = self.parse_embedded_expression("}");
 
                 if !self.eat("}") {
                     self.emit_unclosed_expression(expr_start);
@@ -163,7 +153,7 @@ impl<'a> Parser<'a> {
         attributes
     }
 
-    pub fn parse_close_tag(&mut self, elem: &Element) {
+    pub fn parse_close_tag(&mut self, name: Span) {
         let tag_start = self.pos;
 
         // this is a defensive grammar assertion.
@@ -181,10 +171,10 @@ impl<'a> Parser<'a> {
             self.emit_invalid_closing_tag_name(closing_name_start, self.pos);
         }
 
-        // we check to ensure that the element's name itself is non-erroneous,
+        // we check to ensure that the widget's name itself is non-erroneous,
         // as it is nonsensical to report that the tags don't match when the name
         // itself is illegal
-        if self.src.view_span(elem.name) != self.src.view_span(closing_name) {
+        if self.src.view_span(name) != self.src.view_span(closing_name) {
             // look for candidate
             let mut candidate_exists = false;
 
@@ -196,7 +186,7 @@ impl<'a> Parser<'a> {
                     candidate_exists = true;
                     self.last_closed_tag = closing_name;
 
-                    // we push it back to the open_tags stack as the actual element
+                    // we push it back to the open_tags stack as the actual widget
                     // to which the tag belongs to will consume it
                     self.open_tags.push(open);
                     break;
@@ -204,11 +194,11 @@ impl<'a> Parser<'a> {
             }
 
             if candidate_exists {
-                self.emit_unclosed_tag(elem.name, closing_name);
+                self.emit_unclosed_tag(name, closing_name);
                 self.restore(tag_start);
                 return;
             } else {
-                self.emit_mismatched_tag(elem.name, closing_name);
+                self.emit_mismatched_tag(name, closing_name);
             }
         }
 
@@ -224,14 +214,44 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse_element(&mut self) -> FragmentNode {
-        let (mut elem, is_self_closing) = self.parse_open_tag();
-
-        if is_self_closing {
-            return FragmentNode::Element(elem);
+    pub fn parse_script_tag(&mut self, open: Span) {
+        if let Some(script) = &self.root.script {
+            self.emit_multiple_script_tags(script.open, open);
         }
 
-        let fragment = self.parse_fragment(&[FragmentEnd::Element]);
+        if let Some(&tag) = self.open_tags.last()
+            && tag != open
+        {
+            self.emit_nested_script_tag(open, tag);
+        }
+
+        if let Some(&control) = self.open_controls.last() {
+            self.emit_nested_script_tag(open, control);
+        }
+
+        let source = self.parse_embedded_expression("</");
+
+        self.consume_whitespace();
+
+        if self.peek(0) == 0 {
+            self.emit_unclosed_tag_eof(open); // reach fatal eof
+        }
+
+        self.parse_close_tag(open);
+
+        self.root.script = Some(Script { open, source });
+    }
+
+    pub fn parse_widget(
+        &mut self,
+        mut elem: Widget,
+        is_self_closing: bool,
+    ) -> FragmentNode {
+        if is_self_closing {
+            return FragmentNode::Widget(elem);
+        }
+
+        let fragment = self.parse_fragment(&[FragmentEnd::Widget]);
 
         elem.fragment = Some(fragment);
 
@@ -244,7 +264,7 @@ impl<'a> Parser<'a> {
                 self.emit_unclosed_tag_eof(elem.name);
             }
 
-            return FragmentNode::Element(elem);
+            return FragmentNode::Widget(elem);
         }
 
         // we will look for a closing tag only if the open_tags stack is non-empty
@@ -254,9 +274,9 @@ impl<'a> Parser<'a> {
         if !self.open_tags.is_empty()
             && self.open_tags.last().unwrap() == &elem.name
         {
-            self.parse_close_tag(&elem);
+            self.parse_close_tag(elem.name);
         }
 
-        FragmentNode::Element(elem)
+        FragmentNode::Widget(elem)
     }
 }

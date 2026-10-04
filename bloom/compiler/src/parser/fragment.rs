@@ -21,7 +21,7 @@ impl<'a> Parser<'a> {
                     }
 
                     if self.peek(1) == b'/' {
-                        if expected_end.contains(&FragmentEnd::Element) {
+                        if expected_end.contains(&FragmentEnd::Widget) {
                             // we have spotted an end tag.
                             // we must return whatever we have parsed as the fragment.
                             // the caller is expected to handle the end tag
@@ -32,8 +32,15 @@ impl<'a> Parser<'a> {
                             return Fragment { nodes };
                         }
                     }
-                    // parse element
-                    nodes.push(self.parse_element());
+                    // parse widget
+                    let (elem, is_self_closing) = self.parse_open_tag();
+
+                    match self.src.view_span(elem.name) {
+                        "script" => self.parse_script_tag(elem.name),
+                        _ => {
+                            nodes.push(self.parse_widget(elem, is_self_closing))
+                        }
+                    }
                 }
 
                 b'{' => {
@@ -68,7 +75,7 @@ impl<'a> Parser<'a> {
 
                         self.consume(1);
                         nodes.push(FragmentNode::Expression(
-                            self.parse_embedded_expression(b'}'),
+                            self.parse_embedded_expression("}"),
                         ));
                         if !self.eat("}") {
                             self.emit_unclosed_expression(expr_start);

@@ -1,3 +1,11 @@
 [workspace]
 resolver = "3"
-members = ["platform", "cli", "host", "logger", "api", "compiler"]
+members = [
+  "platform",
+  "cli",
+  "host",
+  "logger",
+  "api",
+  "compiler",
+  "compiler/oxc-test",
+]

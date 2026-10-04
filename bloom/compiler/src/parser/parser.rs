@@ -19,7 +19,7 @@ pub struct Parser<'a> {
 #[derive(Debug, PartialEq, Eq)]
 pub enum FragmentEnd {
     Root,
-    Element,
+    Widget,
     ControlEnd,
     ControlCase,
 }
@@ -29,7 +29,10 @@ impl<'a> Parser<'a> {
         Self {
             pos: 0,
             src,
-            root: Root { fragment: None },
+            root: Root {
+                fragment: None,
+                script: None,
+            },
             open_tags: Vec::new(),
             open_controls: Vec::new(),
             last_closed_tag: ERRONEOUS_SPAN,
@@ -81,6 +84,7 @@ impl<'a> Parser<'a> {
             if self.peek(0) == 0 {
                 // comment was never closed
                 self.emit_unclosed_comment(comment_start);
+                return;
             }
 
             self.consume(1);

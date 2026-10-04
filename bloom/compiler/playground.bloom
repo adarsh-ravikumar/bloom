@@ -1,540 +1,335 @@
-<!-- ============================================================
-     1. TOP-LEVEL TEXT / WHITESPACE
-     ============================================================ -->
+<script>
+    let firstName = "Adarsh";
+    let lastName = "Ravikumar";
 
-hello
-world
+    let age = 19;
+    let year = 2026;
 
-plain text with punctuation ! @ # $ % ^ & * ( ) [ ] = + - _ .
+    let numbers = [1, 2, 3, 4, 5];
+    let user = {
+        name: firstName,
+        age: age,
+        location: "Bengaluru"
+    };
 
+    let add = (a, b) => a + b;
 
-<!-- ============================================================
-     2. SIMPLE ELEMENTS
-     ============================================================ -->
+    let multiply = (a, b) => a * b;
 
-<div></div>
+    let greet = (name) => `Hello, ${name}!`;
 
-<br />
+    let describe = () => {
+        return `${user.name} is ${user.age} years old`;
+    };
 
-<input disabled />
+    let calculate = () => {
+        const a = add(10, 20);
+        const b = multiply(6, 7);
+        const c = numbers.reduce((x, y) => x + y, 0);
 
-<section id="main" class="container" data-value="hello">
-    content
+        return a + b + c;
+    };
+
+    function mount() {
+        const main = document.querySelector("#main");
+
+        const paragraphs = main?.querySelectorAll("p");
+        console.log("paragraphs:", paragraphs?.length);
+
+        const headings = main?.querySelectorAll("h1, h2, h3");
+        console.log("headings:", headings?.length);
+
+        const buttons = main?.querySelectorAll("button");
+        console.log("buttons:", buttons?.length);
+
+        console.log("mounted:", main);
+    }
+</script>
+
+<h1>
+    Bloom Murder Test
+</h1>
+
+<p>
+    Name:
+    {firstName}
+    {lastName}
+</p>
+
+<p>
+    Full name:
+    {`${firstName} ${lastName}`}
+</p>
+
+<p>
+    Age:
+    {age}
+    Year:
+    {year}
+</p>
+
+<p>
+    Arithmetic:
+    {1 + 2}
+    {10 * 20}
+    {100 / 4}
+    {2 ** 10}
+    {(50 - 8) / 7}
+</p>
+
+<p>
+    Functions:
+    {add(10, 20)}
+    {multiply(6, 7)}
+    {greet(firstName)}
+</p>
+
+<p>
+    User:
+    {user.name}
+    {user.age}
+    {user.location}
+</p>
+
+<p>
+    Description:
+    {describe()}
+</p>
+
+<p>
+    Calculation:
+    {calculate()}
+</p>
+
+<section>
+    <h2>
+        Arrays
+    </h2>
+
+    <p>
+        First:
+        {numbers[0]}
+    </p>
+
+    <p>
+        Last:
+        {numbers[numbers.length - 1]}
+    </p>
+
+    <p>
+        Length:
+        {numbers.length}
+    </p>
+
+    <p>
+        Joined:
+        {numbers.join(", ")}
+    </p>
+
+    <p>
+        Sum:
+        {numbers.reduce((a, b) => a + b, 0)}
+    </p>
+
+    <p>
+        Mapped:
+        {numbers.map(x => x * 2).join(" ")}
+    </p>
 </section>
 
+<section>
+    <h2>
+        Deep Nesting
+    </h2>
+
+    <div>
+        <div>
+            <div>
+                <div>
+                    <p>
+                        Depth:
+                        {1 + 1}
+                    </p>
 
-<!-- ============================================================
-     3. IDENTIFIER VARIANTS
-     ============================================================ -->
-
-<my-component></my-component>
-
-<foo-bar></foo-bar>
-
-<_private></_private>
-
-<component123></component123>
-
-<div data-id_123="test"></div>
-
-
-<!-- ============================================================
-     4. ATTRIBUTES
-     ============================================================ -->
-
-<div
-    disabled
-    hidden
-    autofocus
-    class="container"
-    id="main"
-    data-value="hello"
-    aria-label="hello world"
-></div>
-
-<div
-    title="hello {user.name}"
-    class="{theme.className}"
-    data-value={user.id}
-    aria-label="{label}"
-></div>
-
-<div
-    title="hello {user.name} {user.profile.name}"
-    data-value={foo({
-        a: 1,
-        b: "}",
-        c: {
-            nested: true
-        }
-    })}
-></div>
-
-
-<!-- ============================================================
-     5. TEXT + EXPRESSIONS
-     ============================================================ -->
-
-<p>Hello {user.name}!</p>
-
-<p>
-    Hello
-    {user.firstName}
-    {user.lastName}
-    !
-</p>
-
-<p>{foo()}</p>
-
-<p>{foo(bar)}</p>
-
-<p>{foo({ a: 1, b: [1, 2, 3] })}</p>
-
-<p>{user?.profile?.name ?? "Anonymous"}</p>
-
-<p>{condition ? "yes" : "no"}</p>
-
-
-<!-- ============================================================
-     6. QUOTED ATTRIBUTE PARTS
-     ============================================================ -->
-
-<div
-    class="prefix-{user.name}-suffix"
-    title="{foo()} {bar()} static"
-    data-test="hello {user.name} {user.id} world"
-    aria-label='hello {user.name} world'
-></div>
-
-
-<!-- ============================================================
-     7. EMBEDDED JS STRESS
-     ============================================================ -->
-
-<div
-    data-value={foo({
-        user: user,
-        metadata: {
-            source: "profile } page",
-            nested: [
-                { value: "}" },
-                { value: '}' },
-                { deeper: { value: "still } a string" } }
-            ]
-        }
-    })}
->
-    {
-        foo(
-            bar(
-                baz({
-                    a: [1, 2, 3],
-                    b: { x: "{", y: "}" },
-                    c: "hello"
-                })
-            )
-        )
-    }
-</div>
-
-<p>
-    {`simple template`}
-    {`template with } braces`}
-    {`template ${user.name}`}
-    {`template ${foo({ value: "}" })}`}
-    {`outer ${`inner ${foo({ x: "}" })}`} tail`}
-</p>
-
-
-<!-- ============================================================
-     8. COMMENTS
-     ============================================================ -->
-
-<!-- simple comment -->
-
-<!--
-    multiline comment
--->
-
-<div>
-    <!-- comment between elements -->
-    <span>hello</span>
-    <!-- another comment -->
-</div>
-
-
-<!-- ============================================================
-     9. IF / ELIF / ELSE — TOP LEVEL
-     ============================================================ -->
-
-{#if user.isAdmin}
-    Admin
-{:elif user.isModerator}
-    Moderator
-{:elif user.isStaff}
-    Staff
-{:else}
-    User
-{/if}
-
-
-<!-- ============================================================
-     10. IF — NO ELSE / NO ELIF
-     ============================================================ -->
-
-{#if user.isLoggedIn}
-    Welcome back!
-{/if}
-
-
-<!-- ============================================================
-     11. IF / ELIF / ELSE — INSIDE ELEMENT
-     ============================================================ -->
-
-<div class="account">
-    <h1>{user.name}</h1>
-
-    {#if user.isPremium}
-        <span class="badge">Premium</span>
-    {:elif user.isTrial}
-        <span class="badge">Trial</span>
-    {:else}
-        <span class="badge">Free</span>
-    {/if}
-</div>
-
-
-<!-- ============================================================
-     12. NESTED CONTROL BLOCKS
-     ============================================================ -->
-
-{#if user.loggedIn}
-    <section>
-
-        {#if user.isAdmin}
-            <p>Admin</p>
-        {:elif user.isModerator}
-            <p>Moderator</p>
-        {:else}
-            <p>User</p>
-        {/if}
-
-    </section>
-{:elif user.isGuest}
-    <p>Guest</p>
-{:else}
-    <p>Please log in</p>
-{/if}
-
-
-<!-- ============================================================
-     13. CONTROL INSIDE CONTROL INSIDE ELEMENT
-     ============================================================ -->
-
-{#if app.ready}
-    <main>
-
-        {#if user}
-            <div class="user">
-
-                {#if user.profile}
-                    <section>
-                        <h2>{user.profile.name}</h2>
-                    </section>
-                {:elif user.loading}
-                    <span>Loading...</span>
-                {:else}
-                    <span>No profile</span>
-                {/if}
-
-            </div>
-        {:elif app.loading}
-            <p>Loading user...</p>
-        {:else}
-            <p>No user</p>
-        {/if}
-
-    </main>
-{:else}
-    <p>Application unavailable.</p>
-{/if}
-
-
-<!-- ============================================================
-     14. EACH
-     ============================================================ -->
-
-{#each users in users}
-    <p>{users.name}</p>
-{/each}
-
-
-{#each user in users}
-    <div class="user">
-        <span>{user.name}</span>
-    </div>
-{/each}
-
-
-<!-- ============================================================
-     15. EACH WITH COMPLEX EXPRESSION
-     ============================================================ -->
-
-{#each user in users.filter(user => user.active)}
-    <p>{user.name}</p>
-{/each}
-
-
-{#each item in items.map(item => ({
-    id: item.id,
-    name: item.name,
-    value: item.value
-}))}
-    <div>{item.name}</div>
-{/each}
-
-
-<!-- ============================================================
-     16. EACH NESTED IN IF
-     ============================================================ -->
-
-{#if users.length > 0}
-    <ul>
-        {#each user in users}
-            <li>
-                {user.name}
-
-                {#if user.isAdmin}
-                    <strong>Admin</strong>
-                {:elif user.isModerator}
-                    <strong>Moderator</strong>
-                {:else}
-                    <span>User</span>
-                {/if}
-            </li>
-        {/each}
-    </ul>
-{:else}
-    <p>No users.</p>
-{/if}
-
-
-<!-- ============================================================
-     17. IF NESTED IN EACH
-     ============================================================ -->
-
-{#each item in items}
-    {#if item.visible}
-        <article>
-            <h2>{item.title}</h2>
-            <p>{item.description}</p>
-        </article>
-    {:else}
-        <span>Hidden</span>
-    {/if}
-{/each}
-
-
-<!-- ============================================================
-     18. DEEPLY NESTED ELEMENTS
-     ============================================================ -->
-
-<div class="root">
-    <main>
-        <section>
-            <article>
-                <header>
                     <div>
-                        <span>
-                            <strong>
-                                Deeply nested text
-                            </strong>
-                        </span>
-                    </div>
-                </header>
-            </article>
-        </section>
-    </main>
-</div>
+                        <p>
+                            Deeper:
+                            {2 + 2}
+                        </p>
 
-
-<!-- ============================================================
-     19. DEEPLY NESTED ELEMENT + CONTROL + EXPRESSIONS
-     ============================================================ -->
-
-<div class="application">
-    <main>
-        {#if application.ready}
-            <section class="content">
-
-                {#each section in application.sections}
-                    <article class={section.className}>
-
-                        <header>
-                            <h2>{section.title}</h2>
-                        </header>
-
-                        {#if section.items.length > 0}
-                            <div class="items">
-
-                                {#each item in section.items}
-                                    <div class="item">
-                                        <span>{item.name}</span>
-
-                                        {#if item.active}
-                                            <strong>Active</strong>
-                                        {:elif item.pending}
-                                            <strong>Pending</strong>
-                                        {:else}
-                                            <strong>Inactive</strong>
-                                        {/if}
-                                    </div>
-                                {/each}
-
-                            </div>
-                        {:else}
-                            <p>No items.</p>
-                        {/if}
-
-                    </article>
-                {/each}
-
-            </section>
-        {:else}
-            <section>
-                <p>Loading...</p>
-            </section>
-        {/if}
-    </main>
-</div>
-
-
-<!-- ============================================================
-     20. SELF CLOSING ELEMENTS AROUND EVERYTHING
-     ============================================================ -->
-
-<div>
-    <input disabled />
-    <input class="field" value={user.name} />
-    <br />
-    <hr />
-    <custom-component
-        foo="bar"
-        value={foo()}
-        class="{thing}"
-    />
-</div>
-
-
-<!-- ============================================================
-     21. BOOLEAN + EXPRESSION + QUOTED + MIXED ATTRIBUTES
-     ============================================================ -->
-
-<button
-    disabled
-    autofocus
-    class="button {theme.className}"
-    id={button.id}
-    title="Click {user.name}"
-    data-state={state.current}
-    aria-label="{label}"
-    onclick={() => handleClick({
-        user: user,
-        metadata: {
-            source: "button } handler",
-            nested: [{ value: "}" }, { value: '}' }]
-        }
-    })}
->
-    Click me
-</button>
-
-
-<!-- ============================================================
-     22. EVERYTHING AT ONCE
-     ============================================================ -->
-
-{#if application.ready}
-
-    <div
-        class="application {theme.className}"
-        data-id={application.id}
-        title="Application: {application.name}"
-    >
-
-        {#each section in application.sections}
-
-            <section class={section.className}>
-
-                <header>
-                    <h2>{section.title}</h2>
-
-                    {#if section.visible}
-                        <span>Visible</span>
-                    {:elif section.loading}
-                        <span>Loading</span>
-                    {:else}
-                        <span>Hidden</span>
-                    {/if}
-                </header>
-
-                {#if section.items.length > 0}
-
-                    {#each item in section.items.filter(item => item.active)}
-
-                        <article
-                            id={item.id}
-                            class="item {item.className}"
-                            data-value={foo({
-                                item: item,
-                                text: "}",
-                                nested: {
-                                    value: "{"
-                                }
-                            })}
-                        >
-
-                            <h3>{item.name}</h3>
-
+                        <div>
                             <p>
-                                {item.description ?? "No description"}
+                                Even deeper:
+                                {3 + 3}
                             </p>
 
-                            {#if item.featured}
-                                <strong>Featured</strong>
-                            {:elif item.pending}
-                                <strong>Pending</strong>
-                            {:else}
-                                <span>Standard</span>
-                            {/if}
-
-                        </article>
-
-                    {/each}
-
-                {:else}
-
-                    <p>No items in {section.name}.</p>
-
-                {/if}
-
-            </section>
-
-        {/each}
-
+                            <div>
+                                <p>
+                                    Absolutely ridiculous:
+                                    {4 + 4}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
+</section>
 
-{:elif application.loading}
+<section>
+    <h2>
+        Mixed Parts
+    </h2>
 
-    <div class="loading">
-        <span>Loading application...</span>
+    <p>
+        A{1}B{2}C{3}D{4}E
+    </p>
+
+    <p>
+        {firstName} is {age} years old and lives in {user.location}.
+    </p>
+
+    <p>
+        {greet(firstName)}
+        {greet(lastName)}
+        {describe()}
+        {calculate()}
+    </p>
+
+    <p>
+        {"Hello"}
+        {" "}
+        {"World"}
+        {"!"}
+    </p>
+
+    <p>
+        {true}
+        {false}
+        {null}
+    </p>
+</section>
+
+<section>
+    <h2>
+        Sibling Explosion
+    </h2>
+
+    <p>{1}</p>
+    <p>{2}</p>
+    <p>{3}</p>
+    <p>{4}</p>
+    <p>{5}</p>
+    <p>{6}</p>
+    <p>{7}</p>
+    <p>{8}</p>
+    <p>{9}</p>
+    <p>{10}</p>
+
+    <div>
+        <span>{11}</span>
+        <span>{12}</span>
+        <span>{13}</span>
+        <span>{14}</span>
+        <span>{15}</span>
     </div>
+</section>
 
-{:else}
+<section>
+    <h2>
+        Expression Hell
+    </h2>
 
-    <div class="error">
-        <h1>Application unavailable</h1>
-        <p>{application.error ?? "Unknown error"}</p>
+    <p>
+        {add(multiply(2, 3), multiply(4, 5))}
+    </p>
+
+    <p>
+        {numbers.map(x => add(x, 10)).join(", ")}
+    </p>
+
+    <p>
+        {numbers
+            .filter(x => x % 2 === 1)
+            .map(x => x ** 2)
+            .join(", ")}
+    </p>
+
+    <p>
+        {user.name.toUpperCase()}
+        {user.location.toLowerCase()}
+    </p>
+
+    <p>
+        {`${greet(firstName)} ${describe()} ${calculate()}`}
+    </p>
+
+    <p>
+        {(add(1, 2) + multiply(3, 4)) * (5 + 6)}
+    </p>
+
+    <p>
+        {[
+            firstName,
+            lastName,
+            user.location,
+            String(age),
+            String(year)
+        ].join(" | ")}
+    </p>
+</section>
+
+<section>
+    <h2>
+        More Deep Stuff
+    </h2>
+
+    <div>
+        <h3>
+            {greet(firstName)}
+        </h3>
+
+        <div>
+            <p>
+                {user.name}
+                {user.age}
+            </p>
+
+            <div>
+                <p>
+                    {calculate()}
+                </p>
+
+                <div>
+                    <p>
+                        {numbers.map(x => x * x).join(", ")}
+                    </p>
+
+                    <div>
+                        <span>
+                            {`${firstName}:${age}:${year}`}
+                        </span>
+
+                        <span>
+                            {add(age, year)}
+                        </span>
+
+                        <span>
+                            {multiply(age, 2)}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
+</section>
 
-{/if}
+<footer>
+    Final:
+    {firstName}
+    {lastName}
+    {age}
+    {year}
+    {calculate()}
+</footer>

@@ -35,6 +35,8 @@ pub enum DiagnosticClass {
     MismatchedControl,
     UnknownControlCase,
     UnexpectedControlExpression,
+    MultipleScriptTags,
+    NestedScriptTag,
 }
 
 impl DiagnosticClass {
@@ -55,6 +57,8 @@ impl DiagnosticClass {
             Self::ExpectedControlEnd => "E012",
             Self::UnknownControlCase => "E013",
             Self::UnexpectedControlExpression => "E014",
+            Self::MultipleScriptTags => "E015",
+            Self::NestedScriptTag => "E016",
         }
     }
 }

@@ -10,6 +10,10 @@ use crate::{
 impl<'a> Parser<'a> {
     pub fn synchronize(&mut self, set: &[&'static str]) {
         loop {
+            if self.peek(0) == 0 {
+                return;
+            }
+
             let pos = self.pos;
 
             for &item in set {
@@ -739,6 +743,72 @@ impl<'a> Parser<'a> {
                 },
             ],
             notes: vec![],
+        });
+    }
+
+    pub fn emit_multiple_script_tags(
+        &mut self,
+        first_script_open: Span,
+        second_script_open: Span,
+    ) {
+        if self.reached_fatal_eof() {
+            return;
+        }
+
+        self.diagnostics.push(Diagnostic {
+            severity: DiagnosticSeverity::Error,
+            class: DiagnosticClass::MultipleScriptTags,
+            msg: "widget can only have one <script> tag".into(),
+            location: second_script_open,
+            labels: vec![
+                Label {
+                    span: first_script_open,
+                    msg: "first <script> tag declared here".into(),
+                    kind: LabelKind::Secondary,
+                    paranthesise: false,
+                },
+                Label {
+                    span: second_script_open,
+                    msg: "another <script> tag declared here".into(),
+                    kind: LabelKind::Primary,
+                    paranthesise: false,
+                },
+            ],
+            notes: vec![],
+        })
+    }
+
+    pub fn emit_nested_script_tag(
+        &mut self,
+        script_span: Span,
+        outer_span: Span,
+    ) {
+        if self.reached_fatal_eof() {
+            return;
+        }
+
+        self.diagnostics.push(Diagnostic {
+            severity: DiagnosticSeverity::Error,
+            class: DiagnosticClass::NestedScriptTag,
+            msg: "<script> tags cannot be nested".into(),
+            location: script_span,
+            labels: vec![
+                Label {
+                    span: outer_span,
+                    msg: "outer tag here".into(),
+                    kind: LabelKind::Secondary,
+                    paranthesise: false,
+                },
+                Label {
+                    span: script_span,
+                    msg: "nested <script> tag declared here".into(),
+                    kind: LabelKind::Primary,
+                    paranthesise: false,
+                },
+            ],
+            notes: vec![
+                "<script> tags must be declared at the top level".into(),
+            ],
         });
     }
 }

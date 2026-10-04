@@ -4,7 +4,7 @@ use crate::{
 };
 
 impl<'a> Parser<'a> {
-    pub fn parse_embedded_expression(&mut self, delim: u8) -> Span {
+    pub fn parse_embedded_expression(&mut self, delim: &'a str) -> Span {
         // goal of the method is to correctly find the end of a JS expression
         // expects that current pointer is at the start of the expr
         let mut num_braces = 0usize;
@@ -15,7 +15,9 @@ impl<'a> Parser<'a> {
         loop {
             let cur = self.peek(0);
 
-            if cur == delim && num_braces == 0 && quote.is_none() {
+            let may_restore_to = self.pos;
+            if num_braces == 0 && quote.is_none() && self.eat(delim) {
+                self.restore(may_restore_to);
                 return if start == self.pos {
                     ERRONEOUS_SPAN
                 } else {

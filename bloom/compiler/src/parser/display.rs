@@ -9,7 +9,7 @@ impl<'a> Parser<'a> {
 
         for node in &frag.nodes {
             match node {
-                FragmentNode::Element(elem) => {
+                FragmentNode::Widget(elem) => {
                     println!("{base_indent}tag");
                     print!(
                         "{base_indent}{ch}  name: {}\n{base_indent}{ch}  attribs: [",

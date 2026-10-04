@@ -23,11 +23,8 @@ impl<'a> Parser<'a> {
     }
 
     pub fn restore(&mut self, to: usize) {
-        if to > 0 && to < self.pos {
-            self.pos = to;
-        } else {
-            panic!("invalid restore to {to}");
-        }
+        assert!(to <= self.pos);
+        self.pos = to;
     }
 
     pub fn consume_whitespace(&mut self) {

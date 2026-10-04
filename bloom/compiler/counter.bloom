@@ -1,0 +1,150 @@
+<script>
+let count = 0;
+
+/* bloom::event */
+function count_incremented(): number {
+    return count;
+}
+
+/* bloom::command */
+function increment_count (by: number) {
+    count += by;
+    count_incremented();
+}
+
+/* bloom::reactive */
+function count_is_even (): bool {
+    return count % 2 === 0;
+}
+
+function count_is_odd (): bool {
+    return count % 2 === 1;
+}
+
+</script>
+
+<vstack>
+  <text>Count: {count}</text>
+  <text>Is Even: {count_is_even()}</text>
+  <text>Is Odd: {count_is_odd()}</text>
+  <button click:{() => increment_count(1)}}>Increment!</button>
+<vstack>
+
+<!--
+  We parse the script tag.
+
+  1) Collect all variables declared using let, along with their types. These become the candidates for the state set
+     It is mandatory that variables are strongly typed unless declared. Type inference will be done only for builtin
+     types. Objects must be strongly typed. Stray objects are dissallowed.
+  2) Collect all functions that are events, commands and reactive. Resolve their types. For functions, it is made 
+     mandatory that both the parameters AND the returns are strongly typed.
+  3) The script is then transformed into something like:
+  ```
+    let ctxt = {
+      count: $state(0),
+
+      /* bloom::event */
+      count_incremented() {
+        // code that sends the event goes here.
+        const process = () => {
+          // anything that went inside the actual
+          // count_incremented function goes here
+          return count.v;
+        }
+
+        event.send(id, "count_incremented", process()) // something along these lines
+      }
+
+      /* bloom::command */
+      increment_count (by) {
+          // this entire function is kept as is
+          // the workspace resolves the right ids
+          // and will invoke this function
+          count.v += by;
+          count.update();
+          count_incremented();
+      }
+
+      /* bloom::reactive */
+      count_is_even: {
+        value: () => {
+          // anything that went inside the actual
+          // count_is_even function goes here
+          return count.v % 2 === 0;
+        }
+        deps: [count]
+      }
+
+      count_is_odd (){
+          // this is just a regular function
+          return count.v % 2 === 1;
+      }
+    }
+  ```
+
+  4) this context is then used by the actual widget, which may look like this:
+  ```
+    function build_counter () {
+      let id = $acquire(); // acquire an id from the pool
+      let ctxt = ...;
+      
+      const w = new Widget();
+
+      w.build = ($) => {
+        // <vstack>
+        const w1 = build_vstack();
+
+       // <text>Count: {count}</text>
+        const w2 = build_text();
+        w2.setInner(() => {
+          return `Count: ${$.count.v}`
+        }, [$.count]);
+        w1.add($w2);
+
+       // <text>Is Even: {count_is_even()}</text>
+        const w3 = build_text();
+        w3.setInner(() => {
+          return `Is Even: ${$.count_is_even.value()}`
+        }, [$.count_is_even.deps]);
+        w1.add(w3);
+
+       // <text>Is Odd: {count_is_odd()}</text>
+        const w4 = build_text();
+        w3.setInner(() => {
+          return `Is Odd: ${$.count_is_odd())}`
+        }, []);
+        w1.add(w4);
+
+       // <button click:{() => increment_count(1)}}>Increment!</button>
+        const w5 = build_button();
+        w5.binds("click", () => increment_count(1))
+        w5.setInner(() => {
+          Increment!
+        }, [])
+        w1.add(w5);
+      }
+
+      w.ctxt = ctxt;
+
+      $register(w); // register the widget
+      return w;
+    }
+  ```
+-->
+
+quick doubt. in this svelte code:
+
+<script>
+	let name = $state('world');
+	let count = $state(0);
+</script>
+
+<h1>Hello {(()=>{return name})()}!</h1>
+
+<input bind:value={name} />
+<button onclick={() => count += 1}>
+	clicks: {count}
+</button>
+
+when we do {(()=>{return name})()}, the entire thing is still reactive. is this a js consequence because return name means return the reference to name? 
+this is what the output in the browser looks like when i don't call the closure. i can see name gets replaced with get(name). so what does this semantically mean?

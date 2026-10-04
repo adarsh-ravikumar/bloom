@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=, initial-scale=1.0">
+  <title>Document</title>
+</head>
+<body>
+    <h1>JS Test</h1>
+
+    <script>
+      const State = (x) => x;
+
+      function build_counter_context (id) {
+        let count = $state(0);
+
+        let ctxt = {
+          /* bloom::event */
+          count_incremented() {
+            // code that sends the event goes here.
+            const process = () => {
+              // anything that went inside the actual
+              // count_incremented function goes here
+              return count;
+            }
+
+            event.send(id, "count_incremented", process()) // something along these lines
+          }
+
+          /* bloom::command */
+          increment_count (by) {
+              // this entire function is kept as is
+              // the workspace resolves the right ids
+              // and will invoke this function
+              count += by;
+              count_incremented();
+          }
+
+          /* bloom::reactive */
+          count_is_even () {
+              return $derived(
+                () => {
+                  // anything that went inside the actual
+                  // count_is_even function goes here
+                  return count % 2 === 0;
+                },
+
+                [count]
+              )
+              // the $derived will end up returning a function
+              // that is now subscribed to all relavent states used
+              // within it.
+          }
+
+          count_is_odd (){
+              return count % 2 === 1;
+          }
+        }
+
+        return ctxt;
+      }
+    </script>
+</body>
+</html>
