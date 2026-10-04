@@ -3,8 +3,8 @@ use crate::{
     parser::{
         Parser,
         nodes::{
-            Control, ControlBlock, EachControl, ElifControl, Fragment,
-            FragmentNode, IfControl,
+            Control, EachControl, ElifControl, Fragment, FragmentNode,
+            IfControl,
         },
         parser::FragmentEnd,
     },
@@ -22,7 +22,7 @@ impl<'a> Parser<'a> {
         // parse_ident handles whitespace internally.
         // b' ' is passed here to keep the API simple
         // rather than introducing an Option<u8>
-        let name = self.parse_ident(b' ');
+        let name = self.parse_ident(&[b' ']);
         if name == ERRONEOUS_SPAN {
             // error
         }
@@ -43,7 +43,6 @@ impl<'a> Parser<'a> {
         // if we have hit EOF before trying to parse the close block,
         // the current block was never closed
         if self.peek(0) == 0 {
-            println!("{:?}", self.last_closed_control);
             if self.last_closed_control.start > name.start {
                 self.emit_unclosed_control(name, self.last_closed_control);
             } else {
@@ -249,15 +248,12 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Control {
-            name,
-            block: ControlBlock::If(IfControl {
-                condition: expr,
-                body: fragment,
-                elifs,
-                else_body,
-            }),
-        }
+        Control::If(IfControl {
+            condition: expr,
+            body: fragment,
+            elifs,
+            else_body,
+        })
     }
 
     pub fn parse_elif(&mut self, case_start: Span) -> ElifControl {
@@ -329,7 +325,7 @@ impl<'a> Parser<'a> {
         self.consume_whitespace();
 
         let context_start = self.pos; // record for diagnostics
-        let context = self.parse_ident(b' ');
+        let context = self.parse_ident(&[b' ']);
         if context == ERRONEOUS_SPAN {
             self.emit_invalid_each_context_name(context_start, self.pos);
         }
@@ -364,13 +360,10 @@ impl<'a> Parser<'a> {
 
         let body = self.parse_fragment(&[FragmentEnd::ControlEnd]);
 
-        Control {
-            name,
-            block: ControlBlock::Each(EachControl {
-                expression,
-                context,
-                body,
-            }),
-        }
+        Control::Each(EachControl {
+            expression,
+            context,
+            body,
+        })
     }
 }

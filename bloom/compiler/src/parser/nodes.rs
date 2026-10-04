@@ -41,13 +41,7 @@ pub struct Widget {
 }
 
 #[derive(Debug, Clone)]
-pub struct Control {
-    pub name: Span,
-    pub block: ControlBlock,
-}
-
-#[derive(Debug, Clone)]
-pub enum ControlBlock {
+pub enum Control {
     If(IfControl),
     Each(EachControl),
 }

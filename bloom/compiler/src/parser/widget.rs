@@ -1,9 +1,7 @@
-use std::iter::Scan;
-
 use crate::{
     common::{ERRONEOUS_SPAN, Span},
     parser::{
-        Fragment, Parser, Script,
+        Parser, Script,
         nodes::{Attribute, AttributeValue, FragmentNode, Part, Widget},
         parser::FragmentEnd,
     },
@@ -15,7 +13,7 @@ impl<'a> Parser<'a> {
         self.eat("<");
 
         let name_start = self.pos; // record for diagnostics
-        let name = self.parse_ident(b'>');
+        let name = self.parse_ident(&[b'>']);
         if name == ERRONEOUS_SPAN {
             self.emit_invalid_tag_name(name_start, self.pos);
         }
@@ -121,7 +119,7 @@ impl<'a> Parser<'a> {
         while !matches!(self.peek(0), b'>' | b'<' | b'/') && self.peek(0) != 0 {
             // ident
             let start = self.pos; // record for diagnostics
-            let name = self.parse_ident(b'=');
+            let name = self.parse_ident(&[b'=', b'{', b'>', b'"', b'\'']);
             if name == ERRONEOUS_SPAN {
                 self.emit_invalid_attribute_name(start, self.pos);
             }
@@ -166,7 +164,7 @@ impl<'a> Parser<'a> {
         }
 
         let closing_name_start = self.pos; // record for diagnostics
-        let closing_name = self.parse_ident(b'>');
+        let closing_name = self.parse_ident(&[b'>']);
         if closing_name == ERRONEOUS_SPAN {
             self.emit_invalid_closing_tag_name(closing_name_start, self.pos);
         }
