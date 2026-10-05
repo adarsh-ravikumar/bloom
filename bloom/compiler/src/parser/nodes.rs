@@ -9,7 +9,15 @@ pub struct Root {
 #[derive(Debug, Clone)]
 pub struct Script {
     pub open: Span,
-    pub source: Span,
+    pub source: String,
+    pub pre: Preprocess,
+}
+
+#[derive(Debug, Clone)]
+pub struct Preprocess {
+    pub events: Vec<String>,
+    pub commands: Vec<String>,
+    pub reactive: Vec<String>,
 }
 
 // Fragment

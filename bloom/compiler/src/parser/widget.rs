@@ -212,34 +212,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse_script_tag(&mut self, open: Span) {
-        if let Some(script) = &self.root.script {
-            self.emit_multiple_script_tags(script.open, open);
-        }
-
-        if let Some(&tag) = self.open_tags.last()
-            && tag != open
-        {
-            self.emit_nested_script_tag(open, tag);
-        }
-
-        if let Some(&control) = self.open_controls.last() {
-            self.emit_nested_script_tag(open, control);
-        }
-
-        let source = self.parse_embedded_expression("</");
-
-        self.consume_whitespace();
-
-        if self.peek(0) == 0 {
-            self.emit_unclosed_tag_eof(open); // reach fatal eof
-        }
-
-        self.parse_close_tag(open);
-
-        self.root.script = Some(Script { open, source });
-    }
-
     pub fn parse_widget(
         &mut self,
         mut elem: Widget,

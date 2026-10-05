@@ -7,6 +7,7 @@ mod fragment;
 mod ident;
 mod nodes;
 mod parser;
+mod script;
 mod stray;
 mod widget;
 

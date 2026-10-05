@@ -15,6 +15,9 @@ impl<'a> Parser<'a> {
             b'>' => ">",
             b'/' => "/",
             b'=' => "=",
+            b':' => ":",
+            b'"' => "\"",
+            b'\'' => "'",
             _ => panic!(
                 "byte_to_str called with unsupported byte '{byte}':{}",
                 byte as char

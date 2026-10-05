@@ -18,7 +18,9 @@ impl<'a> Parser<'a> {
             let may_restore_to = self.pos;
             if num_braces == 0 && quote.is_none() && self.eat(delim) {
                 self.restore(may_restore_to);
-                return if start == self.pos {
+                return if start == self.pos
+                    || self.src.view(start, self.pos).trim().is_empty()
+                {
                     ERRONEOUS_SPAN
                 } else {
                     Span::new(start, self.pos)

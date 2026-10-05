@@ -44,6 +44,7 @@ impl<'a> Parser<'a> {
 
         false
     }
+
     pub fn emit_invalid_tag_name(&mut self, start: usize, end: usize) {
         if self.reached_fatal_eof() {
             return;
@@ -810,5 +811,84 @@ impl<'a> Parser<'a> {
                 "<script> tags must be declared at the top level".into(),
             ],
         });
+    }
+    pub fn emit_preprocessor_unknown_directive(
+        &mut self,
+        start: usize,
+        end: usize,
+    ) {
+        if self.reached_fatal_eof() {
+            return;
+        }
+
+        self.diagnostics.push(Diagnostic {
+            severity: DiagnosticSeverity::Error,
+            class: DiagnosticClass::PreprocessorUnknownDirective,
+            msg: "unknown script directive".into(),
+            location: Span::new(start, end),
+            labels: vec![Label {
+                span: Span::new(start, end),
+                msg: "unknown script directive".into(),
+                kind: LabelKind::Primary,
+                paranthesise: false,
+            }],
+            notes: vec![
+            "script directives must be one of #command, #event, or #reactive"
+                .into(),
+        ],
+        })
+    }
+
+    pub fn emit_preprocessor_expected_newline(
+        &mut self,
+        start: usize,
+        end: usize,
+    ) {
+        if self.reached_fatal_eof() {
+            return;
+        }
+
+        self.diagnostics.push(Diagnostic {
+            severity: DiagnosticSeverity::Error,
+            class: DiagnosticClass::PreprocessorExpectedNewline,
+            msg: "expected newline after script directive".into(),
+            location: Span::new(start, end),
+            labels: vec![Label {
+                span: Span::new(start, end),
+                msg: "expected newline".into(),
+                kind: LabelKind::Primary,
+                paranthesise: false,
+            }],
+            notes: vec![
+                "script directive must be followed by a newline".into(),
+            ],
+        })
+    }
+
+    pub fn emit_preprocessor_expected_function(
+        &mut self,
+        start: usize,
+        end: usize,
+    ) {
+        if self.reached_fatal_eof() {
+            return;
+        }
+
+        self.diagnostics.push(Diagnostic {
+            severity: DiagnosticSeverity::Error,
+            class: DiagnosticClass::PreprocessorExpectedFunction,
+            msg: "expected function declaration".into(),
+            location: Span::new(start, end),
+            labels: vec![Label {
+                span: Span::new(start, end),
+                msg: "expected 'function'".into(),
+                kind: LabelKind::Primary,
+                paranthesise: false,
+            }],
+            notes: vec![
+            "script directives can only be applied to function declarations"
+                .into(),
+        ],
+        })
     }
 }

@@ -33,7 +33,7 @@ impl<'a> Parser<'a> {
 
         let control_block = match control_type {
             "if" => self.parse_control_if(start, name),
-            "each" => self.parse_control_each(start, name),
+            "each" => self.parse_control_each(start),
             _ => {
                 // unknown control block
                 unreachable!()
@@ -315,11 +315,7 @@ impl<'a> Parser<'a> {
         ])
     }
 
-    pub fn parse_control_each(
-        &mut self,
-        control_start: usize,
-        name: Span,
-    ) -> Control {
+    pub fn parse_control_each(&mut self, control_start: usize) -> Control {
         let control_start = Span::new(control_start, self.pos);
 
         self.consume_whitespace();
