@@ -1,335 +1,145 @@
 <script>
-    let firstName = "Adarsh";
-    let lastName = "Ravikumar";
+let global = 0;
 
-    let age = 19;
-    let year = 2026;
+function outer(
+    param: number,
+    { destructured, renamed: alias }: Input,
+) {
+    let outerLocal = 1;
 
-    let numbers = [1, 2, 3, 4, 5];
-    let user = {
-        name: firstName,
-        age: age,
-        location: "Bengaluru"
-    };
-
-    let add = (a, b) => a + b;
-
-    let multiply = (a, b) => a * b;
-
-    let greet = (name) => `Hello, ${name}!`;
-
-    let describe = () => {
-        return `${user.name} is ${user.age} years old`;
-    };
-
-    let calculate = () => {
-        const a = add(10, 20);
-        const b = multiply(6, 7);
-        const c = numbers.reduce((x, y) => x + y, 0);
-
-        return a + b + c;
-    };
-
-    function mount() {
-        const main = document.querySelector("#main");
-
-        const paragraphs = main?.querySelectorAll("p");
-        console.log("paragraphs:", paragraphs?.length);
-
-        const headings = main?.querySelectorAll("h1, h2, h3");
-        console.log("headings:", headings?.length);
-
-        const buttons = main?.querySelectorAll("button");
-        console.log("buttons:", buttons?.length);
-
-        console.log("mounted:", main);
+    // Plain block
+    {
+        let blockLocal = 2;
+        const shadow = "block";
     }
+
+    // Nested blocks
+    {
+        let nested = 3;
+
+        {
+            let deeplyNested = 4;
+            const shadow = "nested";
+        }
+    }
+
+    // if / else
+    if (param > 0) {
+        let ifLocal = 5;
+
+        if (ifLocal > 2) {
+            let nestedIfLocal = 6;
+        }
+    } else {
+        let elseLocal = 7;
+    }
+
+    // while
+    while (param > 0) {
+        let whileLocal = 8;
+
+        {
+            let whileBlockLocal = 9;
+        }
+    }
+
+    // do while
+    do {
+        let doLocal = 10;
+    } while (param > 0);
+
+    // for
+    for (let i = 0; i < 10; i++) {
+        let forLocal = i;
+
+        {
+            let forBlockLocal = i;
+        }
+    }
+
+    // for-in
+    for (let key in object) {
+        let forInLocal = key;
+    }
+
+    // for-of
+    for (const value of values) {
+        let forOfLocal = value;
+    }
+
+    // switch
+    switch (param) {
+        case 1:
+            let caseOne = 11;
+
+            {
+                let caseOneBlock = 12;
+            }
+            break;
+
+        case 2:
+            let caseTwo = 13;
+            break;
+
+        default:
+            let defaultCase = 14;
+            break;
+    }
+
+    // try / catch / finally
+    try {
+        let tryLocal = 15;
+
+        {
+            let tryBlockLocal = 16;
+        }
+    } catch (error) {
+        let catchLocal = 17;
+
+        {
+            let catchBlockLocal = 18;
+        }
+    } finally {
+        let finallyLocal = 19;
+
+        {
+            let finallyBlockLocal = 20;
+        }
+    }
+
+    // labeled statement
+    label: {
+        let labeledLocal = 21;
+    }
+
+    // deeply nested combination
+    for (let j = 0; j < 5; j++) {
+        if (j > 2) {
+            while (j < 4) {
+                {
+                    let ridiculous = 22;
+                }
+            }
+        } else {
+            try {
+                let nestedTry = 23;
+            } catch (error) {
+                let nestedCatch = 24;
+            }
+        }
+    }
+}
 </script>
 
-<h1>
-    Bloom Murder Test
-</h1>
+<vstack>
+  <text>Count: {count}</text>
+  {#if count_is_even()}
+    <text>Is Even</text>
+  {:elif count_is_odd()}
+    <text>Is Odd</text>
+  {:else}
+    <text>Neither odd or even? or did is_odd not work?</text>
+  {/if}
+  <button> increment_count(1)}}>Increment!</button>
+</vstack>
 
-<p>
-    Name:
-    {firstName}
-    {lastName}
-</p>
-
-<p>
-    Full name:
-    {`${firstName} ${lastName}`}
-</p>
-
-<p>
-    Age:
-    {age}
-    Year:
-    {year}
-</p>
-
-<p>
-    Arithmetic:
-    {1 + 2}
-    {10 * 20}
-    {100 / 4}
-    {2 ** 10}
-    {(50 - 8) / 7}
-</p>
-
-<p>
-    Functions:
-    {add(10, 20)}
-    {multiply(6, 7)}
-    {greet(firstName)}
-</p>
-
-<p>
-    User:
-    {user.name}
-    {user.age}
-    {user.location}
-</p>
-
-<p>
-    Description:
-    {describe()}
-</p>
-
-<p>
-    Calculation:
-    {calculate()}
-</p>
-
-<section>
-    <h2>
-        Arrays
-    </h2>
-
-    <p>
-        First:
-        {numbers[0]}
-    </p>
-
-    <p>
-        Last:
-        {numbers[numbers.length - 1]}
-    </p>
-
-    <p>
-        Length:
-        {numbers.length}
-    </p>
-
-    <p>
-        Joined:
-        {numbers.join(", ")}
-    </p>
-
-    <p>
-        Sum:
-        {numbers.reduce((a, b) => a + b, 0)}
-    </p>
-
-    <p>
-        Mapped:
-        {numbers.map(x => x * 2).join(" ")}
-    </p>
-</section>
-
-<section>
-    <h2>
-        Deep Nesting
-    </h2>
-
-    <div>
-        <div>
-            <div>
-                <div>
-                    <p>
-                        Depth:
-                        {1 + 1}
-                    </p>
-
-                    <div>
-                        <p>
-                            Deeper:
-                            {2 + 2}
-                        </p>
-
-                        <div>
-                            <p>
-                                Even deeper:
-                                {3 + 3}
-                            </p>
-
-                            <div>
-                                <p>
-                                    Absolutely ridiculous:
-                                    {4 + 4}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</section>
-
-<section>
-    <h2>
-        Mixed Parts
-    </h2>
-
-    <p>
-        A{1}B{2}C{3}D{4}E
-    </p>
-
-    <p>
-        {firstName} is {age} years old and lives in {user.location}.
-    </p>
-
-    <p>
-        {greet(firstName)}
-        {greet(lastName)}
-        {describe()}
-        {calculate()}
-    </p>
-
-    <p>
-        {"Hello"}
-        {" "}
-        {"World"}
-        {"!"}
-    </p>
-
-    <p>
-        {true}
-        {false}
-        {null}
-    </p>
-</section>
-
-<section>
-    <h2>
-        Sibling Explosion
-    </h2>
-
-    <p>{1}</p>
-    <p>{2}</p>
-    <p>{3}</p>
-    <p>{4}</p>
-    <p>{5}</p>
-    <p>{6}</p>
-    <p>{7}</p>
-    <p>{8}</p>
-    <p>{9}</p>
-    <p>{10}</p>
-
-    <div>
-        <span>{11}</span>
-        <span>{12}</span>
-        <span>{13}</span>
-        <span>{14}</span>
-        <span>{15}</span>
-    </div>
-</section>
-
-<section>
-    <h2>
-        Expression Hell
-    </h2>
-
-    <p>
-        {add(multiply(2, 3), multiply(4, 5))}
-    </p>
-
-    <p>
-        {numbers.map(x => add(x, 10)).join(", ")}
-    </p>
-
-    <p>
-        {numbers
-            .filter(x => x % 2 === 1)
-            .map(x => x ** 2)
-            .join(", ")}
-    </p>
-
-    <p>
-        {user.name.toUpperCase()}
-        {user.location.toLowerCase()}
-    </p>
-
-    <p>
-        {`${greet(firstName)} ${describe()} ${calculate()}`}
-    </p>
-
-    <p>
-        {(add(1, 2) + multiply(3, 4)) * (5 + 6)}
-    </p>
-
-    <p>
-        {[
-            firstName,
-            lastName,
-            user.location,
-            String(age),
-            String(year)
-        ].join(" | ")}
-    </p>
-</section>
-
-<section>
-    <h2>
-        More Deep Stuff
-    </h2>
-
-    <div>
-        <h3>
-            {greet(firstName)}
-        </h3>
-
-        <div>
-            <p>
-                {user.name}
-                {user.age}
-            </p>
-
-            <div>
-                <p>
-                    {calculate()}
-                </p>
-
-                <div>
-                    <p>
-                        {numbers.map(x => x * x).join(", ")}
-                    </p>
-
-                    <div>
-                        <span>
-                            {`${firstName}:${age}:${year}`}
-                        </span>
-
-                        <span>
-                            {add(age, year)}
-                        </span>
-
-                        <span>
-                            {multiply(age, 2)}
-                        </span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</section>
-
-<footer>
-    Final:
-    {firstName}
-    {lastName}
-    {age}
-    {year}
-    {calculate()}
-</footer>

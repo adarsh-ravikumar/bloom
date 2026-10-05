@@ -43,12 +43,13 @@ pub enum DiagnosticClass {
     PreprocessorUnknownDirective,
     PreprocessorExpectedNewline,
     PreprocessorExpectedFunction,
+    PreprocessorExpectedFunctionName,
 }
 
 impl DiagnosticClass {
     pub fn code(&self) -> &'static str {
         match self {
-            // 0xx => Parser Errors
+            // 0xx => Parser
             Self::InvalidIdentifier(_) => "E001",
             Self::ExpectedToken => "E002",
             Self::MismatchedTag => "E003",
@@ -65,9 +66,12 @@ impl DiagnosticClass {
             Self::UnexpectedControlExpression => "E014",
             Self::MultipleScriptTags => "E015",
             Self::NestedScriptTag => "E016",
-            Self::PreprocessorUnknownDirective => "E201",
-            Self::PreprocessorExpectedNewline => "E202",
-            Self::PreprocessorExpectedFunction => "E203",
+
+            // 1xx => Preprocessor
+            Self::PreprocessorUnknownDirective => "E101",
+            Self::PreprocessorExpectedNewline => "E102",
+            Self::PreprocessorExpectedFunction => "E103",
+            Self::PreprocessorExpectedFunctionName => "E104",
         }
     }
 }

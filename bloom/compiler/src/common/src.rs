@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use crate::common::Span;
 
+#[derive(Debug, Clone)]
 pub enum SourceFrom {
     Path(PathBuf),
     String,
@@ -17,6 +18,7 @@ impl SourceFrom {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Source {
     pub from: SourceFrom,
     pub src: Vec<u8>,

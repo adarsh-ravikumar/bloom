@@ -1,36 +1,18 @@
 use std::{fmt::write, fs, path::Path};
 
-use crate::{diagnostic::DiagnosticRenderer, parser::Parser};
+use oxc_allocator::Allocator as OxcAllocator;
 
-mod codegen;
+use crate::{
+    diagnostic::DiagnosticRenderer,
+    ir::{SemanticAnalyzer, TemplateIr},
+    parser::Parser,
+};
+
 mod common;
 mod diagnostic;
+mod ir;
 mod parser;
 mod utils;
-
-fn write_to_test(generated: String) {
-    let code = format!(
-        "\n \
-<!DOCTYPE html>\n \
-<html lang=\"en\">\n \
-<head>\n \
-  <meta charset=\"UTF-8\">\n \
-  <meta name=\"viewport\" content=\"width=, initial-scale=1.0\">\n \
-  <title>Document</title>\n \
-</head>\n \
-<body>\n \
-  <div id=\"main\"> </div>\n \
-\n \
-  <script>\n \
-    {generated}\n \
-  </script>\n \
-</body>\n \
-</html>\
-        "
-    );
-
-    fs::write("./index.html", code).unwrap();
-}
 
 fn main() {
     let source = match common::Source::from_path("./playground.bloom") {
@@ -51,12 +33,45 @@ fn main() {
         return;
     }
 
-    print!("Abstract syntax tree:");
-    parser.display();
+    // print!("Abstract syntax tree:");
+    // parser.display();
 
-    let mut codegen_js = codegen::CodegenJs::new(&source, &parser.root);
+    // println!("\nIR");
+    let mut template_ir = TemplateIr::new(&source, &parser.root);
+    template_ir.generate_ir();
 
-    let generated_code = codegen_js.generate();
+    // for node in &template_ir.nodes {
+    //     println!("{:?}", node);
+    // }
+    //
+    // println!("\nExpressions");
+    // for expr in &template_ir.expressions {
+    //     println!("{:?}", expr);
+    // }
 
-    write_to_test(generated_code);
+    // script
+    if let Some(script) = &parser.root.script {
+        let mut analyzer = SemanticAnalyzer::new(&template_ir.expressions);
+
+        let oxc_allocator = OxcAllocator::new();
+        analyzer.collect_symbols(&oxc_allocator, &script.source);
+
+        println!("Context Tree");
+        for context in analyzer.context_tree {
+            println!(
+                "\ncontext {} (parent: {})",
+                context.context, context.parent
+            );
+
+            println!("symbols:");
+            for (k, v) in context.symbols {
+                println!("{} :  {:?}", k, v);
+            }
+        }
+
+        // println!("Stripped script");
+        // println!("{}", script.source);
+        // println!("Metadata");
+        // println!("{:?}", script.pre);
+    }
 }

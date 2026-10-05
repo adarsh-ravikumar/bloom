@@ -891,4 +891,32 @@ impl<'a> Parser<'a> {
         ],
         })
     }
+
+    pub fn emit_preprocessor_expected_function_name(
+        &mut self,
+        start: usize,
+        end: usize,
+    ) {
+        if self.reached_fatal_eof() {
+            return;
+        }
+
+        self.diagnostics.push(Diagnostic {
+        severity: DiagnosticSeverity::Error,
+        class: DiagnosticClass::PreprocessorExpectedFunctionName,
+        msg: "expected function name".into(),
+        location: Span::new(start, end),
+        labels: vec![Label {
+            span: Span::new(start, end),
+            msg: "function marked with a script directive must have a name"
+                .into(),
+            kind: LabelKind::Primary,
+            paranthesise: false,
+        }],
+        notes: vec![
+            "script directives can only be applied to named function declarations"
+                .into(),
+        ],
+    })
+    }
 }

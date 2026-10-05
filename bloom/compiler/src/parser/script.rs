@@ -79,12 +79,14 @@ impl<'a> Parser<'a> {
                 }
 
                 pos += 1;
+                cur = self.src.get(pos);
                 continue;
             }
 
             if quote.is_some() && cur == b'\\' {
                 pos += 2;
                 // this is naive, but it handles \', \" and \`, which is more than sufficient
+                cur = self.src.get(pos);
                 continue;
             }
 
@@ -168,6 +170,12 @@ impl<'a> Parser<'a> {
                 let name_end = pos;
 
                 let fn_name = self.src.view(name_start, name_end).to_string();
+
+                if fn_name.trim().is_empty() {
+                    self.emit_preprocessor_expected_function_name(
+                        name_start, name_end,
+                    );
+                }
 
                 match directive {
                     COMMAND => commands.push(fn_name),
