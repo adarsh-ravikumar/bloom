@@ -21,6 +21,7 @@ pub enum IdentType {
 }
 
 pub enum DiagnosticClass {
+    // Parser
     InvalidIdentifier(IdentType),
     MismatchedTag,
     ExpectedToken,
@@ -37,6 +38,11 @@ pub enum DiagnosticClass {
     UnexpectedControlExpression,
     MultipleScriptTags,
     NestedScriptTag,
+
+    // Preprocessor
+    PreprocessorUnknownDirective,
+    PreprocessorExpectedNewline,
+    PreprocessorExpectedFunction,
 }
 
 impl DiagnosticClass {
@@ -59,6 +65,9 @@ impl DiagnosticClass {
             Self::UnexpectedControlExpression => "E014",
             Self::MultipleScriptTags => "E015",
             Self::NestedScriptTag => "E016",
+            Self::PreprocessorUnknownDirective => "E201",
+            Self::PreprocessorExpectedNewline => "E202",
+            Self::PreprocessorExpectedFunction => "E203",
         }
     }
 }
