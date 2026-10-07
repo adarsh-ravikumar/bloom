@@ -51,11 +51,12 @@ fn main() {
 
     // script
     if let Some(script) = &parser.root.script {
-        let mut analyzer = SemanticAnalyzer::new(&template_ir.expressions);
+        let mut analyzer =
+            SemanticAnalyzer::new(&script.source, &template_ir.expressions);
 
         let oxc_allocator = OxcAllocator::new();
-        analyzer.analyze_program(&oxc_allocator, &script.source);
-        //
+        analyzer.analyze(&oxc_allocator);
+
         // println!("Context Tree");
         // for context in analyzer.context_tree {
         //     println!(
@@ -68,7 +69,11 @@ fn main() {
         //         println!("{} :  {:?}", k, v);
         //     }
         // }
-        //
+
+        // for use_ in &analyzer.uses {
+        //     println!("{use_:?}");
+        // }
+
         // println!("Symbol Use");
         // for use_ in analyzer.uses {
         //     println!(

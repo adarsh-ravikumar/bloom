@@ -1,629 +1,685 @@
 <script>
 // ============================================================
-// GLOBAL STATE
+// GLOBAL TYPE ALIASES
 // ============================================================
 
-let count = 0;
-let name = "Bloom";
-let enabled = true;
-let ratio = 1.5;
-let message = "hello";
-let items = [1, 2, 3];
-let config = {
+type UserId = number;
+
+type UserName = string;
+
+type Enabled = boolean;
+
+type Score = number | string;
+
+type Pair = [number, string];
+
+type UserTags = string[];
+
+type StatusValue = "active" | "inactive" | "banned";
+
+type UserRecord = {
+    id: UserId;
+    name: UserName;
+    enabled: Enabled;
+    score: Score;
+};
+
+
+// ============================================================
+// GLOBAL INTERFACES
+// ============================================================
+
+interface User {
+    id: UserId;
+    name: UserName;
+    enabled: Enabled;
+    tags: UserTags;
+}
+
+interface Config {
+    retries: number;
+    timeout: number;
+    status: StatusValue;
+}
+
+interface Result {
+    success: boolean;
+    value: Score;
+    user: User;
+}
+
+
+// ============================================================
+// GLOBAL ENUMS
+// ============================================================
+
+enum UserStatus {
+    Active,
+    Inactive,
+    Banned,
+}
+
+enum Priority {
+    Low,
+    Medium,
+    High,
+}
+
+
+// ============================================================
+// GLOBAL STATE USING CUSTOM TYPES
+// ============================================================
+
+let currentUser: User = {
+    id: 1,
+    name: "Bloom",
+    enabled: true,
+    tags: ["compiler", "ui"],
+};
+
+let config: Config = {
     retries: 3,
     timeout: 1000,
-    nested: {
-        enabled: true,
-    },
+    status: "active",
 };
 
-let globalObject = {
-    value: 42,
-    name: "global",
+let status: UserStatus = UserStatus.Active;
+
+let priority: Priority = Priority.High;
+
+let score: Score = 42;
+
+let pair: Pair = [1, "one"];
+
+let result: Result = {
+    success: true,
+    value: score,
+    user: currentUser,
 };
 
-let maybeValue: number | undefined = 10;
-
-let a = 1;
-let b = 2;
-let c = 3;
-
-let shadow = "GLOBAL";
-let callbackResult = 0;
+let record: UserRecord = {
+    id: 1,
+    name: "Bloom",
+    enabled: true,
+    score: "excellent",
+};
 
 
 // ============================================================
-// GLOBAL FUNCTIONS
+// GLOBAL DIRECTIVES
 // ============================================================
 
-function increment() {
-    count++;
-    ratio += 0.5;
-    message = `${name}: ${count}`;
-    callbackResult = count + a + b + c;
+#command
+function activateUser(user: User): Result {
+    currentUser = user;
+    currentUser.enabled = true;
 
-    if (enabled) {
-        count += config.retries;
-    }
+    status = UserStatus.Active;
 
-    globalObject.value += count;
+    return {
+        success: true,
+        value: currentUser.id,
+        user: currentUser,
+    };
 }
 
 
-function decrement() {
-    count--;
-
-    if (count > 0) {
-        message = "positive";
-    } else {
-        message = "zero";
-    }
-
-    globalObject.value -= ratio;
+#event
+function userChanged(user: User, newStatus: UserStatus) {
+    currentUser = user;
+    status = newStatus;
 }
 
 
-function reset() {
-    count = 0;
-    ratio = 1;
-    message = name;
-    callbackResult = config.timeout;
-
-    globalObject.value = 0;
+#reactive
+function updateScore(value: Score) {
+    score = value;
 }
 
 
-function compute(x: number) {
-    const result = x * ratio + count;
+// ============================================================
+// GLOBAL FUNCTIONS USING CUSTOM TYPES
+// ============================================================
 
-    callbackResult = result;
-
-    return result;
+function getUser(): User {
+    return currentUser;
 }
 
 
-function processItems() {
-    for (const item of items) {
-        count += item;
-        message = `${name}:${item}`;
-    }
-
-    return count;
-}
-
-
-function inspectObject() {
-    const value = globalObject.value;
-
-    count += value;
-
-    globalObject.name = name;
-
-    return globalObject;
-}
-
-
-function mutateConfig() {
-    config.retries++;
-
-    config.timeout += ratio;
-
-    if (config.nested.enabled) {
-        message = "nested enabled";
-    }
-
+function getConfig(): Config {
     return config;
 }
 
 
-function conditionalWork() {
-    if (enabled && count > 0) {
-        message = name;
-        count += 1;
-    } else if (!enabled || ratio < 0) {
-        message = "disabled";
-        count -= 1;
-    } else {
-        message = `fallback:${count}`;
-    }
-
-    return count;
-}
-
-
-function shadowTest(count: number) {
-    // `count` is LOCAL and must NOT resolve to global count.
-    count++;
-
-    {
-        let count = 100;
-
-        // This is also local.
-        count++;
-
-        message = name;
-    }
-
-    // Back to parameter `count`.
-    count++;
-
-    // Globals.
-    ratio++;
-    callbackResult = a + b + c;
-
-    return count;
-}
-
-
-function nestedShadow() {
-    let name = "LOCAL NAME";
-
-    {
-        let message = "LOCAL MESSAGE";
-
-        count++;
-
-        {
-            let count = 999;
-
-            count++;
-
-            // These must still resolve to globals.
-            ratio++;
-            enabled = !enabled;
-
-            console.log(name);
-            console.log(message);
-        }
-
-        count++;
-    }
-
-    // Global count.
-    count++;
-
-    // Local name.
-    message = name;
-}
-
-
-function destructuringTest() {
-    const {
-        value,
-        name: localName,
-        nested: {
-            enabled: nestedEnabled,
-        },
-    } = globalObject;
-
-    const [first, second, ...rest] = items;
-
-    count += value;
-    message = localName;
-    enabled = nestedEnabled;
-
-    callbackResult = first + second + rest.length;
-
-    return rest;
-}
-
-
-function assignmentTest() {
-    let x = 10;
-
-    x += count;
-    x *= ratio;
-
-    globalObject.value = x;
-
-    count = x;
-    ratio = count / 2;
-
-    return x;
-}
-
-
-function expressionTest() {
-    const x =
-        count +
-        ratio *
-        (a + b) -
-        c;
-
-    const y = enabled
-        ? message
-        : name;
-
-    const z = maybeValue ?? count;
-
-    callbackResult = x;
-
-    return `${y}:${z}:${globalObject.value}`;
-}
-
-
-function memberTest() {
-    // `globalObject` is global.
-    // `value` is NOT a symbol use.
-    const x = globalObject.value;
-
-    // Both globalObject and count are uses.
-    globalObject[count] = ratio;
-
-    // `config` is global.
-    config.nested.enabled = enabled;
-
-    // Computed property.
-    config[message] = count;
-
-    return x;
-}
-
-
-function optionalTest() {
-    globalObject?.value;
-
-    config?.nested?.enabled;
-
-    const x = maybeValue?.toString();
-
-    return x ?? message;
-}
-
-
-function callbackTest() {
-    const fn = (x: number) => {
-        // x is local.
-        // Globals remain globals.
-        return x + count + ratio;
+function makeResult(
+    user: User,
+    value: Score,
+): Result {
+    return {
+        success: true,
+        value: value,
+        user: user,
     };
-
-    callbackResult = fn(a);
-
-    items.forEach((item) => {
-        count += item;
-        message = `${name}:${item}`;
-    });
-
-    return callbackResult;
 }
 
 
-function functionExpressionTest() {
-    const fn = function (value: number) {
-        // value is local.
-        // count/name/ratio are global.
-        return value + count + ratio + name.length;
-    };
-
-    return fn(a);
-}
-
-
-function defaultParameterTest(
-    value: number = count + ratio,
-    text: string = message,
+function updateUser(
+    user: User,
+    tags: UserTags,
+    enabled: Enabled,
 ) {
-    // Parameters shadow nothing here.
-    callbackResult = value;
+    user.tags = tags;
+    user.enabled = enabled;
 
-    message = text;
-
-    return value;
+    currentUser = user;
 }
 
 
-function restParameterTest(...values: number[]) {
-    count += values.length;
-
-    for (const value of values) {
-        callbackResult += value;
-    }
-
-    return count;
+function compareScores(
+    left: Score,
+    right: Score,
+): boolean {
+    return left === right;
 }
 
 
-function loopTest() {
-    for (
-        let i = 0;
-        i < count;
-        i++
-    ) {
-        ratio += i;
-
-        {
-            let ratio = 999;
-
-            // Local ratio.
-            callbackResult += ratio;
-
-            // Global count.
-            count += 1;
-        }
-
-        message = name;
-    }
-
-    let key: string;
-
-    for (key in config) {
-        message = key;
-        count++;
-    }
-
-    for (const value of items) {
-        count += value;
-    }
-
-    while (count < 100) {
-        count += 1;
-        ratio++;
-    }
-
-    do {
-        count--;
-        message = name;
-    } while (count > 50);
-}
-
-
-function switchTest(value: number) {
-    switch (value) {
-        case 1:
-            count++;
-            message = name;
-            break;
-
-        case 2: {
-            let count = 1000;
-
-            count++;
-
-            // Global ratio.
-            ratio++;
-
-            break;
-        }
-
-        default:
-            count += config.retries;
-            message = globalObject.name;
-    }
-
-    return count;
-}
-
-
-function tryTest() {
-    try {
-        count++;
-        globalObject.value++;
-        message = name;
-    } catch (error) {
-        // error is local to catch.
-        message = error instanceof Error
-            ? error.message
-            : "unknown";
-
-        count--;
-    } finally {
-        ratio++;
-        callbackResult = count;
-    }
-}
-
-
-function labeledTest() {
-outer: {
-        count++;
-
-        for (const item of items) {
-            if (item > count) {
-                message = name;
-                break outer;
-            }
-
-            ratio += item;
-        }
-    }
+function processPair(
+    value: Pair,
+): Score {
+    return value[0];
 }
 
 
 // ============================================================
-// CLASS
+// LOCAL TYPE ALIASES / INTERFACES / ENUMS
 // ============================================================
 
-class Counter {
-    value = count;
+function localTypesTest() {
 
-    name = name;
+    type LocalId = number;
 
-    static globalValue = globalObject.value;
+    type LocalName = string;
 
-    increment() {
-        this.value++;
+    type LocalValue = number | boolean;
 
-        count++;
+    type LocalPair = [LocalId, LocalName];
 
-        ratio += this.value;
+    type LocalTags = string[];
 
-        message = `${this.name}:${count}`;
+    type LocalRecord = {
+        id: LocalId;
+        name: LocalName;
+        value: LocalValue;
+    };
+
+
+    interface LocalUser {
+        id: LocalId;
+        name: LocalName;
+        enabled: boolean;
+        tags: LocalTags;
     }
 
-    decrement() {
-        this.value--;
 
-        count--;
-
-        globalObject.value = this.value;
-
-        message = name;
+    interface LocalResult {
+        success: boolean;
+        user: LocalUser;
+        value: LocalValue;
     }
 
-    get current() {
-        return this.value + count;
+
+    enum LocalStatus {
+        Ready,
+        Running,
+        Finished,
     }
 
-    set current(value: number) {
-        this.value = value;
 
-        count = value;
-
-        callbackResult = value;
+    enum LocalPriority {
+        Low,
+        High,
     }
 
-    static create() {
-        count++;
 
-        return new Counter();
-    }
+    // --------------------------------------------------------
+    // LOCAL VARIABLES USING LOCAL TYPES
+    // --------------------------------------------------------
 
-    static inspect() {
+    let id: LocalId = 10;
+
+    let name: LocalName = "local";
+
+    let value: LocalValue = true;
+
+    let tags: LocalTags = ["a", "b"];
+
+    let pair: LocalPair = [id, name];
+
+    let record: LocalRecord = {
+        id: id,
+        name: name,
+        value: value,
+    };
+
+    let user: LocalUser = {
+        id: id,
+        name: name,
+        enabled: true,
+        tags: tags,
+    };
+
+    let localResult: LocalResult = {
+        success: true,
+        user: user,
+        value: value,
+    };
+
+    let localStatus: LocalStatus = LocalStatus.Ready;
+
+    let localPriority: LocalPriority = LocalPriority.High;
+
+
+    // --------------------------------------------------------
+    // LOCAL FUNCTION USING LOCAL TYPES
+    // --------------------------------------------------------
+
+    function processLocalUser(
+        user: LocalUser,
+        status: LocalStatus,
+        value: LocalValue,
+    ): LocalResult {
+
+        user.enabled = true;
+
+        localStatus = status;
+
+        localPriority = LocalPriority.High;
+
         return {
-            count,
-            ratio,
-            message,
-            objectValue: globalObject.value,
+            success: true,
+            user: user,
+            value: value,
         };
     }
-}
 
 
-// ============================================================
-// GLOBAL CLASS USAGE
-// ============================================================
+    // --------------------------------------------------------
+    // LOCAL FUNCTION USING GLOBAL TYPES
+    // --------------------------------------------------------
 
-function classTest() {
-    const counter = new Counter();
+    function processGlobalUser(
+        user: User,
+        config: Config,
+    ): Result {
 
-    counter.increment();
+        currentUser = user;
 
-    count += counter.current;
-
-    counter.current = count;
-
-    const other = Counter.create();
-
-    callbackResult = other.current;
-
-    return Counter.inspect();
-}
-
-
-// ============================================================
-// NESTED FUNCTION / CLOSURE TEST
-// ============================================================
-
-function closureTest() {
-    let local = 10;
-
-    function nested() {
-        // `local` is captured, therefore NOT global.
-        local++;
-
-        // These ARE global.
-        count++;
-        ratio += local;
-        message = name;
+        return {
+            success: config.retries > 0,
+            value: score,
+            user: user,
+        };
     }
 
-    nested();
 
-    return local;
+    // --------------------------------------------------------
+    // NESTED SCOPE
+    // --------------------------------------------------------
+
+    {
+        type NestedValue = string | number;
+
+        interface NestedObject {
+            value: NestedValue;
+            enabled: boolean;
+        }
+
+        enum NestedStatus {
+            A,
+            B,
+        }
+
+        let nestedValue: NestedValue = "nested";
+
+        let nestedObject: NestedObject = {
+            value: nestedValue,
+            enabled: true,
+        };
+
+        let nestedStatus: NestedStatus = NestedStatus.A;
+
+        // Global types still visible.
+        let nestedUser: User = currentUser;
+
+        // Outer local types still visible.
+        let outerUser: LocalUser = user;
+
+        nestedObject.enabled = outerUser.enabled;
+
+        nestedValue = nestedObject.value;
+
+        localStatus = LocalStatus.Running;
+    }
+
+
+    // Back to function-local types.
+    localStatus = LocalStatus.Finished;
+
+    return localResult;
 }
 
 
 // ============================================================
-// HEAVY MIXED FUNCTION
+// SHADOWING CUSTOM TYPES
+// ============================================================
+
+function shadowedTypes() {
+
+    type Value = number;
+
+    interface Data {
+        value: Value;
+    }
+
+    enum State {
+        One,
+        Two,
+    }
+
+    let value: Value = 10;
+
+    let data: Data = {
+        value: value,
+    };
+
+    let state: State = State.One;
+
+
+    {
+        type Value = string;
+
+        interface Data {
+            value: Value;
+        }
+
+        enum State {
+            Inner,
+        }
+
+        let value: Value = "inner";
+
+        let data: Data = {
+            value: value,
+        };
+
+        let state: State = State.Inner;
+
+        // Global custom types remain visible.
+        let user: User = currentUser;
+
+        message = user.name;
+    }
+
+
+    // Back to outer local types.
+    value = 20;
+
+    data.value = value;
+
+    state = State.Two;
+}
+
+
+// ============================================================
+// MIXED GLOBAL + LOCAL CUSTOM TYPES
 // ============================================================
 
 function everything(
-    input: number = count,
-    ...values: number[]
+    user: User,
+    result: Result,
+    pair: Pair,
+    score: Score,
 ) {
-    let local = input;
 
-    {
-        let shadow = "LOCAL";
+    type LocalScore = number | string;
 
-        local += count;
-        local += ratio;
-
-        if (enabled) {
-            message = shadow;
-        } else {
-            message = name;
-        }
+    interface LocalConfig {
+        retries: number;
+        score: LocalScore;
+        user: User;
     }
 
-    for (const value of values) {
-        local += value;
-        count += value;
+    enum LocalState {
+        Idle,
+        Running,
+        Done,
     }
 
-    const result = {
-        count,
-        ratio,
-        name,
-        message,
-        enabled,
-        value: globalObject.value,
-        computed: config[message],
+
+    let localScore: LocalScore = score;
+
+    let localConfig: LocalConfig = {
+        retries: config.retries,
+        score: localScore,
+        user: user,
     };
 
-    callbackResult = result.count;
+    let localState: LocalState = LocalState.Idle;
 
-    return result;
+
+    #reactive
+    function updateLocal(
+        config: LocalConfig,
+        state: LocalState,
+    ) {
+        localConfig = config;
+        localState = state;
+
+        currentUser = config.user;
+    }
+
+
+    #command
+    function finish(
+        value: LocalScore,
+    ): Result {
+        localScore = value;
+        localState = LocalState.Done;
+
+        return {
+            success: true,
+            value: value,
+            user: currentUser,
+        };
+    }
+
+
+    if (localConfig.retries > 0) {
+        localState = LocalState.Running;
+
+        updateLocal(
+            localConfig,
+            localState,
+        );
+    }
+
+
+    return finish(localScore);
 }
 
 
 // ============================================================
-// TOP LEVEL USES
+// TYPE REFERENCES THROUGH FUNCTIONS / CALLBACKS
 // ============================================================
 
-count++;
-ratio = compute(count);
+function callbackTest() {
 
-message = name;
+    type CallbackValue = User | Result;
 
-if (enabled) {
-    increment();
-} else {
-    decrement();
+    interface CallbackData {
+        value: CallbackValue;
+        priority: Priority;
+    }
+
+
+    let data: CallbackData = {
+        value: currentUser,
+        priority: priority,
+    };
+
+
+    const callback = (
+        value: CallbackValue,
+    ): CallbackValue => {
+
+        if (typeof value === "object") {
+            return value;
+        }
+
+        return value;
+    };
+
+
+    data.value = callback(data.value);
+
+    return data;
 }
 
-const result = everything(
-    count,
-    a,
-    b,
-    c,
+
+// ============================================================
+// DEEPLY NESTED TYPE REFERENCES
+// ============================================================
+
+function deeplyNested() {
+
+    type OuterValue = number | string;
+
+    interface Outer {
+        value: OuterValue;
+    }
+
+
+    let outer: Outer = {
+        value: 10,
+    };
+
+
+    {
+        type MiddleValue = boolean;
+
+        interface Middle {
+            value: MiddleValue;
+        }
+
+        let middle: Middle = {
+            value: true,
+        };
+
+
+        {
+            type InnerValue = [OuterValue, MiddleValue];
+
+            interface Inner {
+                value: InnerValue;
+                outer: Outer;
+                middle: Middle;
+            }
+
+            let inner: Inner = {
+                value: [outer.value, middle.value],
+                outer: outer,
+                middle: middle,
+            };
+
+            outer.value = inner.value[0];
+            middle.value = inner.value[1];
+        }
+    }
+}
+
+
+// ============================================================
+// GLOBAL DIRECTIVES USING LOCAL / GLOBAL TYPE REFERENCES
+// ============================================================
+
+#command
+function commandWithTypes(
+    user: User,
+    priority: Priority,
+): Result {
+
+    status = UserStatus.Active;
+
+    return makeResult(
+        user,
+        priority === Priority.High
+            ? 100
+            : "normal",
+    );
+}
+
+
+#event
+function eventWithTypes(
+    result: Result,
+    user: User,
+) {
+    currentUser = user;
+    score = result.value;
+}
+
+
+#reactive
+function reactiveWithTypes(
+    config: Config,
+    user: User,
+) {
+    currentUser = user;
+
+    if (config.retries > 0) {
+        currentUser.enabled = true;
+    }
+}
+
+
+// ============================================================
+// TOP LEVEL USE
+// ============================================================
+
+let finalUser: User = getUser();
+
+let finalConfig: Config = getConfig();
+
+let finalResult: Result = makeResult(
+    finalUser,
+    score,
 );
 
-globalObject.value = result.count;
+let finalPair: Pair = [finalUser.id, finalUser.name];
 
-callbackResult = processItems();
+let finalRecord: UserRecord = record;
 
-console.log(
-    count,
-    name,
-    ratio,
-    message,
-    globalObject.value,
-    callbackResult,
+activateUser(finalUser);
+
+userChanged(
+    finalUser,
+    UserStatus.Inactive,
 );
 
+updateScore(finalResult.value);
+
+commandWithTypes(
+    finalUser,
+    Priority.High,
+);
+
+eventWithTypes(
+    finalResult,
+    finalUser,
+);
+
+reactiveWithTypes(
+    finalConfig,
+    finalUser,
+);
 </script>
-
-<vstack>
-  <text>Count: {count}</text>
-  {#if count_is_even()}
-    <text>Is Even</text>
-  {:elif count_is_odd()}
-    <text>Is Odd</text>
-  {:else}
-    <text>Neither odd or even? or did is_odd not work?</text>
-  {/if}
-  <button> increment_count(1)}}>Increment!</button>
-</vstack>
-

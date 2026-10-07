@@ -1,14 +1,35 @@
-use std::{collections::HashMap, os::unix::ffi::OsStrExt};
+use std::{collections::HashMap, iter::Skip};
 
 use crate::ir::template::Expression;
 use oxc_allocator::{Allocator as OxcAllocator, Vec as OxcVec};
+
+#[rustfmt::skip]
 use oxc_ast::ast::{
-    Argument, ArrayExpression, ArrayExpressionElement, ArrowFunctionBody,
-    ArrowFunctionExpression, AssignmentTarget, AssignmentTargetMaybeDefault,
-    AssignmentTargetProperty, BindingPattern as OxcBindingPattern,
-    ChainElement, Expression as OxcExpression, ExpressionStatement,
-    ForStatementInit, Function, ObjectPropertyKind, ParenthesizedExpression,
-    Program, PropertyKey, Statement as OxcStatement, UpdateExpression,
+    Argument as OxcArgument,
+    ArrayExpressionElement as OxcArrayExpressionElement, 
+    ArrowFunctionBody as OxcArrowFunctionBody, 
+    AssignmentTarget as OxcAssignmentTarget, 
+    AssignmentTargetMaybeDefault as OxcAssignmentTargetMaybeDefault, 
+    AssignmentTargetPattern as OxcAssignmentTargetPattern, 
+    AssignmentTargetProperty as OxcAssignmentTargetProperty, 
+    BindingPattern as OxcBindingPattern, 
+    ChainElement as OxcChainElement, 
+    Expression as OxcExpression, 
+    ForStatementLeft as OxcForStatementLeft, 
+    FormalParameters as OxcFormalParameters, 
+    FunctionBody as OxcFunctionBody, 
+    MemberExpression as OxcMemberExpression, 
+    ObjectPropertyKind as OxcObjectPropertyKind, 
+    SimpleAssignmentTarget as OxcSimpleAssignmentTarget, 
+    Statement as OxcStatement,
+    TSType as OxcTSType,
+    VariableDeclaration as OxcVariableDeclaration,
+    ForStatementInit as OxcForStatementInit, 
+    TSLiteral as OxcTSLiteral, 
+    TSTupleElement as OxcTSTupleElement,
+    TSTypeName as OxcTSTypeName,
+    TSSignature as OxcTSSignature,
+    PropertyKey as OxcPropertyKey
 };
 use oxc_parser::Parser;
 use oxc_span::{SourceType, Span as OxcSpan};
@@ -17,37 +38,96 @@ use oxc_span::{SourceType, Span as OxcSpan};
 pub struct SemanticAnalyzer<'a> {
     pub expressions: &'a Vec<Expression>,
     pub context_tree: Vec<SymbolTable>,
-    pub next_context: usize,
-    pub uses: Vec<OxcSpan>,
+    source: &'a str,
+    pub uses: Vec<SymbolUse>,
 }
 
-pub enum Body<'a> {
-    Statement(&'a OxcStatement<'a>),
-    Statements(&'a OxcVec<'a, OxcStatement<'a>>),
-    Expression(&'a OxcExpression<'a>),
+#[derive(Debug, Clone)]
+pub enum TypeAnnotation {
+    Number(OxcSpan), // 64-bit IEEE-754
+    String(OxcSpan), // UTF-8
+    Boolean(OxcSpan),
+
+    Array((OxcSpan, Box<TypeAnnotation>)),
+    Tuple((OxcSpan, Vec<TypeAnnotation>)),
+    NamedTuple((OxcSpan, Vec<(String, TypeAnnotation)>)),
+
+    // this can occur only inside the NamedTuple array, but is a part of
+    // TypeAnnotation to preserve the simplicity
+    NamedTupleMember((OxcSpan, String, Box<TypeAnnotation>)),
+
+    Union((OxcSpan, Vec<TypeAnnotation>)),
+    Literal((OxcSpan, Literal)),
+
+    TypeReference((OxcSpan, String)),
+
+    Disallowed((OxcSpan, &'static str)),
+}
+
+#[derive(Debug, Clone)]
+pub enum NamedType {
+    Alias {
+        type_annotation: TypeAnnotation,
+        generics: Option<OxcSpan>,
+    },
+
+    Interface {
+        fields: Vec<(Option<String>, TypeAnnotation)>,
+        generics: Option<OxcSpan>,
+    },
+
+    Enum(Vec<(String, Option<EnumValue>)>),
+}
+
+#[derive(Debug, Clone)]
+pub enum Literal {
+    Number(f64),    // 64-bit IEEE-754
+    String(String), // UTF-8
+    Boolean(bool),
+}
+
+#[derive(Debug, Clone)]
+pub enum EnumValue {
+    Number(f64),    // 64-bit IEEE-754
+    String(String), // UTF-8
+    Invalid,
 }
 
 #[derive(Debug, Clone)]
 pub enum Symbol {
     Variable {
         span: OxcSpan,
-        // type_annotation: TypeAnnotation
+        type_annotation: Option<TypeAnnotation>,
     },
+
     Function {
         name: String,
-        params: Vec<String>,
         context: usize,
-        // return_type: TypeAnnotation
+        body: Option<OxcSpan>,
+        return_type: Option<TypeAnnotation>,
+        // bloom does NOT allow for generics.
+        // store here if any for diagnostics
+        generics: Option<OxcSpan>,
     },
-    Paramter {
+
+    Parameter {
         span: OxcSpan,
         optional: bool,
-        // type_annotation: TypeAnnotation
+        order: usize,
+        type_annotation: Option<TypeAnnotation>,
     },
+
     ParameterRest {
         span: OxcSpan,
-        // type_annotation: TypeAnnotation
     },
+
+    Type(NamedType),
+}
+
+#[derive(Debug, Clone)]
+pub struct SymbolUse {
+    pub span: OxcSpan,
+    pub context: usize,
 }
 
 #[derive(Debug)]
@@ -57,19 +137,22 @@ pub struct SymbolTable {
     pub parent: usize,
 }
 
-impl<'a> SemanticAnalyzer<'a> {
-    pub fn new(expressions: &'a Vec<Expression>) -> Self {
+impl<'a, 'b> SemanticAnalyzer<'b>
+where
+    'a: 'b,
+{
+    pub fn new(source: &'a str, expressions: &'b Vec<Expression>) -> Self {
         Self {
             expressions,
+            source,
             context_tree: Vec::new(),
             uses: Vec::new(),
-            next_context: 0,
         }
     }
 
-    fn parse<'b>(
-        source: &'b str,
-        oxc_allocator: &'b OxcAllocator,
+    fn parse(
+        source: &'a str,
+        oxc_allocator: &'a OxcAllocator,
     ) -> OxcVec<'b, OxcStatement<'b>> {
         let parser = Parser::new(oxc_allocator, source, SourceType::ts());
 
@@ -83,1262 +166,1819 @@ impl<'a> SemanticAnalyzer<'a> {
         result.program.body
     }
 
-    // context tree
-    fn new_context(&mut self, parent: usize) -> usize {
+    fn create_context(&mut self, parent: usize) -> usize {
         let new_context = self.context_tree.len();
+
         self.context_tree.push(SymbolTable {
             symbols: HashMap::new(),
             context: new_context,
             parent,
         });
 
-        print!("{new_context} | ");
-
         new_context
     }
 
-    fn enter_context(&mut self) -> usize {
-        let context = self.next_context;
-
-        self.next_context += 1;
-
-        print!("{context} | ");
-
-        context
-    }
-
-    fn collect_bindings(&mut self, pattern: &OxcBindingPattern) -> Vec<String> {
-        match pattern {
-            OxcBindingPattern::BindingIdentifier(id) => {
-                vec![id.name.to_string()]
-            }
-
-            OxcBindingPattern::ObjectPattern(pattern) => {
-                let mut bindings = Vec::new();
-
-                for property in &pattern.properties {
-                    bindings.extend(self.collect_bindings(&property.value));
-                }
-
-                if let Some(rest) = &pattern.rest {
-                    bindings.extend(self.collect_bindings(&rest.argument));
-                }
-
-                bindings
-            }
-
-            OxcBindingPattern::ArrayPattern(pattern) => {
-                let mut bindings = Vec::new();
-
-                for element in &pattern.elements {
-                    if let Some(element) = element {
-                        bindings.extend(self.collect_bindings(&element));
-                    }
-                }
-
-                bindings
-            }
-
-            OxcBindingPattern::AssignmentPattern(pattern) => {
-                self.collect_bindings(&pattern.left)
-            }
-        }
-    }
-
-    fn visit_statement<'b>(
+    fn insert_in_context(
         &mut self,
-        parent_context: usize,
-        current_context: usize,
-        stmt: &OxcStatement<'b>,
+        context: usize,
+        name: String,
+        symbol: Symbol,
     ) {
-        match stmt {
-            OxcStatement::ExpressionStatement(expr) => {
-                if matches!(
-                    expr.expression,
-                    OxcExpression::ArrowFunctionExpression(_)
-                        | OxcExpression::FunctionExpression(_)
-                ) {
-                    self.build_context(
-                        current_context,
-                        Body::Expression(&expr.expression),
-                    );
-                }
-            }
-
-            OxcStatement::VariableDeclaration(decl) => {
-                for decl in &decl.declarations {
-                    let bindings = self.collect_bindings(&decl.id);
-                    // add the bindings to the current scope
-                    for binding in bindings {
-                        self.context_tree
-                            .get_mut(current_context)
-                            .unwrap()
-                            .symbols
-                            .insert(
-                                binding,
-                                Symbol::Variable { span: decl.span },
-                            );
-                    }
-
-                    if let Some(init) = &decl.init
-                        && matches!(
-                            init,
-                            OxcExpression::ArrowFunctionExpression(_)
-                                | OxcExpression::FunctionExpression(_)
-                        )
-                    {
-                        self.build_context(
-                            current_context,
-                            Body::Expression(init),
-                        );
-                    }
-                }
-            }
-
-            // functions -> add params to new context
-            OxcStatement::FunctionDeclaration(func) => {
-                let fn_context = if let Some(body) = &func.body {
-                    self.build_context(
-                        current_context,
-                        Body::Statements(&body.statements),
-                    )
-                } else {
-                    current_context
-                };
-
-                let mut params = Vec::new();
-
-                for param in &func.params.items {
-                    // let from = self.context_tree.get(fn_context).unwrap();
-
-                    let bindings = self.collect_bindings(&param.pattern);
-
-                    for binding in bindings {
-                        params.push(binding.clone());
-                        self.context_tree
-                            .get_mut(fn_context)
-                            .unwrap()
-                            .symbols
-                            .insert(
-                                binding,
-                                Symbol::Paramter {
-                                    span: param.span,
-                                    optional: param.optional,
-                                },
-                            );
-                    }
-                }
-
-                if let Some(rest) = &func.params.rest {
-                    let bindings = self.collect_bindings(&rest.rest.argument);
-
-                    for binding in bindings {
-                        params.push(binding.clone());
-                        self.context_tree
-                            .get_mut(fn_context)
-                            .unwrap()
-                            .symbols
-                            .insert(
-                                binding,
-                                Symbol::ParameterRest { span: rest.span },
-                            );
-                    }
-                }
-
-                // add the function to the current context
-                let fn_name = if let Some(name) = func.name() {
-                    name.to_string()
-                } else {
-                    "".to_string()
-                };
-
-                self.context_tree
-                    .get_mut(parent_context)
-                    .unwrap()
-                    .symbols
-                    .insert(
-                        fn_name.clone(),
-                        Symbol::Function {
-                            name: fn_name,
-                            context: fn_context,
-                            params,
-                        },
-                    );
-            }
-
-            // arrow-function -> add params to new context
-
-            // for, for-in, for-of       -> add iterator to new context
-            OxcStatement::ForStatement(for_stmt) => {
-                let new_context = self.new_context(current_context);
-
-                self.build_context(
-                    new_context,
-                    Body::Statement(&for_stmt.body),
-                );
-
-                if let Some(
-                    oxc_ast::ast::ForStatementInit::VariableDeclaration(init),
-                ) = &for_stmt.init
-                {
-                    for decl in &init.declarations {
-                        let bindings = self.collect_bindings(&decl.id);
-                        // add the bindings to the current scope
-                        for binding in bindings {
-                            self.context_tree
-                                .get_mut(new_context)
-                                .unwrap()
-                                .symbols
-                                .insert(
-                                    binding,
-                                    Symbol::Variable { span: decl.span },
-                                );
-                        }
-                    }
-                }
-            }
-
-            OxcStatement::ForInStatement(for_in_stmt) => {
-                let new_context = self.new_context(current_context);
-
-                self.build_context(
-                    new_context,
-                    Body::Statement(&for_in_stmt.body),
-                );
-
-                if let oxc_ast::ast::ForStatementLeft::VariableDeclaration(
-                    init,
-                ) = &for_in_stmt.left
-                {
-                    for decl in &init.declarations {
-                        let bindings = self.collect_bindings(&decl.id);
-                        // add the bindings to the current scope
-                        for binding in bindings {
-                            self.context_tree
-                                .get_mut(new_context)
-                                .unwrap()
-                                .symbols
-                                .insert(
-                                    binding,
-                                    Symbol::Variable { span: decl.span },
-                                );
-                        }
-                    }
-                }
-            }
-
-            OxcStatement::ForOfStatement(for_of_stmt) => {
-                let new_context = self.new_context(current_context);
-
-                self.build_context(
-                    new_context,
-                    Body::Statement(&for_of_stmt.body),
-                );
-
-                if let oxc_ast::ast::ForStatementLeft::VariableDeclaration(
-                    init,
-                ) = &for_of_stmt.left
-                {
-                    for decl in &init.declarations {
-                        let bindings = self.collect_bindings(&decl.id);
-                        // add the bindings to the current scope
-                        for binding in bindings {
-                            self.context_tree
-                                .get_mut(new_context)
-                                .unwrap()
-                                .symbols
-                                .insert(
-                                    binding,
-                                    Symbol::Variable { span: decl.span },
-                                );
-                        }
-                    }
-                }
-            }
-
-            // if, while, do-while, with, labeled, try, catch, switch -> build_context
-            OxcStatement::IfStatement(stmt) => {
-                self.build_context(
-                    current_context,
-                    Body::Statement(&stmt.consequent),
-                );
-
-                if let Some(alternate) = &stmt.alternate {
-                    self.build_context(
-                        current_context,
-                        Body::Statement(alternate),
-                    );
-                }
-            }
-
-            OxcStatement::WhileStatement(stmt) => {
-                self.build_context(
-                    current_context,
-                    Body::Statement(&stmt.body),
-                );
-            }
-
-            OxcStatement::DoWhileStatement(stmt) => {
-                self.build_context(
-                    current_context,
-                    Body::Statement(&stmt.body),
-                );
-            }
-
-            OxcStatement::WithStatement(stmt) => {
-                self.build_context(
-                    current_context,
-                    Body::Statement(&stmt.body),
-                );
-            }
-
-            OxcStatement::LabeledStatement(stmt) => {
-                self.build_context(
-                    current_context,
-                    Body::Statement(&stmt.body),
-                );
-            }
-
-            OxcStatement::TryStatement(stmt) => {
-                self.build_context(
-                    current_context,
-                    Body::Statements(&stmt.block.body),
-                );
-
-                // catch
-                if let Some(catch_block) = &stmt.handler {
-                    let catch_context = self.build_context(
-                        current_context,
-                        Body::Statements(&catch_block.body.body),
-                    );
-
-                    if let Some(param) = &catch_block.param {
-                        let bindings = self.collect_bindings(&param.pattern);
-                        for binding in bindings {
-                            self.context_tree
-                                .get_mut(catch_context)
-                                .unwrap()
-                                .symbols
-                                .insert(
-                                    binding,
-                                    Symbol::Variable { span: param.span },
-                                );
-                        }
-                    }
-                }
-
-                // finally
-                if let Some(finally_block) = &stmt.finalizer {
-                    self.build_context(
-                        current_context,
-                        Body::Statements(&finally_block.body),
-                    );
-                }
-            }
-
-            OxcStatement::SwitchStatement(stmt) => {
-                let switch_context = self.new_context(current_context);
-
-                for case in &stmt.cases {
-                    for stmt in &case.consequent {
-                        self.visit_statement(
-                            switch_context,
-                            switch_context,
-                            stmt,
-                        );
-                    }
-                }
-            }
-
-            OxcStatement::BlockStatement(stmt) => {
-                self.build_context(
-                    current_context,
-                    Body::Statements(&stmt.body),
-                );
-            }
-            _ => return,
-        }
-    }
-
-    fn visit_arrow_statement<'b>(
-        &mut self,
-        parent_context: usize,
-        current_context: usize,
-        func: &ArrowFunctionExpression<'b>,
-    ) {
-        let new_context = self.new_context(current_context);
-
-        match &func.body {
-            ArrowFunctionBody::FunctionBody(body) => {
-                self.build_context(
-                    new_context,
-                    Body::Statements(&body.statements),
-                );
-            }
-
-            _ => (),
+        let Some(context) = self.context_tree.get_mut(context) else {
+            unreachable!(
+                "invalid context {context}. maximum allowed context is  {}",
+                self.context_tree.len() - 1
+            );
         };
 
-        let mut params = Vec::new();
+        context.symbols.insert(name, symbol);
+    }
 
-        for param in &func.params.items {
-            // let from = self.context_tree.get(fn_context).unwrap();
+    fn expression(&mut self, context: usize, expr: &OxcExpression<'a>) {
+        match expr {
+            // these need not be visited
+            OxcExpression::BooleanLiteral(_) => return,
+            OxcExpression::NullLiteral(_) => return,
+            OxcExpression::NumericLiteral(_) => return,
+            OxcExpression::BigIntLiteral(_) => return,
+            OxcExpression::RegExpLiteral(_) => return,
+            OxcExpression::StringLiteral(_) => return,
+            OxcExpression::V8IntrinsicExpression(_) => return,
+            OxcExpression::Super(_) => return,
+            OxcExpression::ClassExpression(_) => return,
+            OxcExpression::ImportExpression(_) => return,
+            OxcExpression::ThisExpression(_) => return,
+            OxcExpression::ImportMeta(_) => return,
+            OxcExpression::NewTarget(_) => return,
 
-            let bindings = self.collect_bindings(&param.pattern);
+            // jsx expressions are guaranteed to NOT occur
+            OxcExpression::JSXElement(_) => unreachable!(),
+            OxcExpression::JSXFragment(_) => unreachable!(),
 
-            for binding in bindings {
-                params.push(binding.clone());
-                self.context_tree
-                    .get_mut(new_context)
-                    .unwrap()
-                    .symbols
-                    .insert(
-                        binding,
-                        Symbol::Paramter {
-                            span: param.span,
-                            optional: param.optional,
-                        },
-                    );
+            OxcExpression::TemplateLiteral(expr) => {
+                /*
+                 * struct oxc_ast::ast::TemplateLiteral<'a>
+                 * - expressions: oxc_allocator::Vec<'a, oxc_ast::ast::Expression<'a>>
+                 *
+                 * quasis is ignored as it only contains static template text.
+                 */
+
+                for expr in &expr.expressions {
+                    self.expression(context, expr);
+                }
             }
-        }
 
-        if let Some(rest) = &func.params.rest {
-            let bindings = self.collect_bindings(&rest.rest.argument);
+            OxcExpression::Identifier(expr) => {
+                /*
+                 * struct oxc_ast::ast::IdentifierReference<'a>
+                 * - span: oxc_span::Span
+                 */
 
-            for binding in bindings {
-                params.push(binding.clone());
-                self.context_tree
-                    .get_mut(new_context)
-                    .unwrap()
-                    .symbols
-                    .insert(binding, Symbol::ParameterRest { span: rest.span });
+                self.uses.push(SymbolUse {
+                    span: expr.span,
+                    context,
+                });
+            }
+
+            OxcExpression::ArrayExpression(expr) => {
+                /*
+                 * struct oxc_ast::ast::ArrayExpression<'a>
+                 * - elements: oxc_allocator::Vec<'a, oxc_ast::ast::ArrayExpressionElement<'a>>)
+                 */
+
+                for element in &expr.elements {
+                    /*
+                     * enum oxc_ast::ast::ArrayExpressionElement<'a>
+                     * : SpreadElement(oxc_ast::ast::SpreadElement<'a>),
+                     * : Elision(oxc_ast::ast::Elision),
+                     * : oxc_ast::ast::Expression<'a> variants
+                     */
+
+                    match element {
+                        /*
+                         * struct oxc_ast::ast::Elision
+                         * : this represents the lack of an element, and hence can be skipped
+                         */
+                        OxcArrayExpressionElement::Elision(_) => continue,
+
+                        /*
+                         * struct oxc_ast::ast::SpreadElement<'a>
+                         * - argument: Expression<'a>
+                         */
+                        OxcArrayExpressionElement::SpreadElement(spread) => {
+                            self.expression(context, &spread.argument);
+                        }
+
+                        _ => {
+                            if let Some(expr) = element.as_expression() {
+                                self.expression(context, expr);
+                            } else {
+                                unreachable!(
+                                    "unhandled oxc_ast::ast::ArrayExpressionElement | {expr:?}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            OxcExpression::ArrowFunctionExpression(expr) => {
+                /*
+                 * struct oxc_ast::ast::ArrowFunctionExpression<'a>
+                 * - params: Box<'a, oxc_ast::ast::FormalParameters<'a>>,
+                 * - body: oxc_ast::ast::ArrowFunctionBody<'a>,
+                 */
+
+                // creates a new semantic context.
+                let new_context = self.create_context(context);
+
+                self.formal_parameters(new_context, &expr.params);
+
+                /*
+                 * enum oxc_ast::ast::ArrowFunctionBody
+                 * : FunctionBody(Box<'a, oxc_ast::ast::FunctionBody<'a>>)
+                 * : oxc_ast::ast::Expression<'a> variants
+                 */
+                match &expr.body {
+                    OxcArrowFunctionBody::FunctionBody(body) => {
+                        self.function_body(new_context, body);
+                    }
+
+                    _ => {
+                        if let Some(expr) = &expr.body.as_expression() {
+                            self.expression(new_context, expr);
+                        } else {
+                            unreachable!(
+                                "unhandled oxc_ast::ast::ArrowFunctionBody | {expr:?}"
+                            );
+                        }
+                    }
+                }
+            }
+
+            OxcExpression::AssignmentExpression(expr) => {
+                /*
+                 * struct oxc_ast::ast::AssignmentExpression<'a>
+                 * - left: oxc_ast::ast::AssignmentTarget<'a>
+                 * - right: oxc_ast::ast::Expression<'a>
+                 */
+
+                self.assignment_target(context, &expr.left);
+                self.expression(context, &expr.right);
+            }
+
+            OxcExpression::AwaitExpression(expr) => {
+                /*
+                 * struct oxc_ast::ast::AwaitExpression<'a>
+                 * - argument: oxc_ast::ast::Expression<'a>
+                 */
+
+                self.expression(context, &expr.argument);
+            }
+
+            OxcExpression::BinaryExpression(expr) => {
+                /*
+                 * struct oxc_ast::ast::BinaryExpression<'a>
+                 * - left: oxc_ast::ast::Expression<'a>
+                 * - right: oxc_ast::ast::Expression<'a>
+                 */
+
+                self.expression(context, &expr.left);
+                self.expression(context, &expr.right);
+            }
+
+            OxcExpression::CallExpression(expr) => {
+                self.callee_arguments(context, &expr.callee, &expr.arguments);
+            }
+
+            OxcExpression::ChainExpression(expr) => {
+                /*
+                 * struct oxc_ast::ast::ChainExpression<'a>
+                 * - expression: oxc_ast::ast::ChainElement<'a>
+                 */
+
+                match &expr.expression {
+                    /*
+                     * enum oxc_ast::ast::ChainElement<'a>
+                     * : CallExpression(Box<'a, CallExpression<'a>>)
+                     * : TSNonNullExpression(Box<'a, TSNonNullExpression<'a>>)
+                     * : oxc_ast::ast::MemberExpression<'a> variants
+                     */
+                    OxcChainElement::CallExpression(expr) => {
+                        self.callee_arguments(
+                            context,
+                            &expr.callee,
+                            &expr.arguments,
+                        );
+                    }
+
+                    OxcChainElement::TSNonNullExpression(expr) => {
+                        /*
+                         * struct oxc_ast::ast::TSNonNullExpression<'a>
+                         * - expression: oxc_ast::ast::Expression<'a>
+                         */
+
+                        self.expression(context, &expr.expression);
+                    }
+
+                    _ => {
+                        if let Some(expr) =
+                            expr.expression.as_member_expression()
+                        {
+                            self.member(context, expr);
+                        } else {
+                            unreachable!(
+                                "unhandled oxc_ast::ast::Element | {expr:?}"
+                            );
+                        }
+                    }
+                }
+            }
+
+            OxcExpression::ConditionalExpression(expr) => {
+                /*
+                 * struct oxc_ast::ast::ConditionalExpression<'a>
+                 * - test: oxc_ast::ast::Expression<'a>
+                 * - consequent: oxc_ast::ast::Expression<'a>
+                 * - alternate: oxc_ast::ast::Expression<'a>
+                 */
+
+                self.expression(context, &expr.test);
+                self.expression(context, &expr.consequent);
+                self.expression(context, &expr.alternate);
+            }
+
+            OxcExpression::FunctionExpression(expr) => {
+                /*
+                 * struct oxc_ast::ast::FunctionExpression<'a>
+                 * - params: Box<'a, oxc_ast::ast::FormalParameters<'a>>,
+                 * - body: oxc_ast::ast::FunctionBody<'a>,
+                 * - id: Option<oxc_ast::ast::BindingIdentifier<'a>>
+                 */
+
+                // creates a new semantic context.
+                let new_context = self.create_context(context);
+
+                self.formal_parameters(new_context, &expr.params);
+
+                if let Some(body) = &expr.body {
+                    let body = self.function_body(new_context, body);
+
+                    // if the body itself doesn't exist, then it doesn't make a
+                    // difference if the function's name is tracked
+                    if let Some(id) = &expr.id {
+                        self.insert_in_context(
+                            new_context,
+                            id.name.to_string(),
+                            Symbol::Function {
+                                name: id.name.to_string(),
+                                context: new_context,
+                                body: Some(body),
+                                // we needn't care about the type annotation and
+                                // generics for a function expression.
+                                return_type: None,
+                                generics: None,
+                            },
+                        );
+                    }
+                }
+            }
+
+            OxcExpression::LogicalExpression(expr) => {
+                /*
+                 * struct oxc_ast::ast::LogicalExpression<'a>
+                 * - left: oxc_ast::ast::Expression<'a>
+                 * - right: oxc_ast::ast::Expression<'a>
+                 */
+
+                self.expression(context, &expr.left);
+                self.expression(context, &expr.right);
+            }
+
+            OxcExpression::NewExpression(expr) => {
+                /*
+                 * struct oxc_ast::ast::NewExpression<'a>
+                 * - callee: oxc_ast::ast::Expression<'a>
+                 * - arguments: oxc_allocator::Vec<'a, oxc_ast::ast::<'a>>
+                 */
+
+                self.callee_arguments(context, &expr.callee, &expr.arguments);
+            }
+
+            OxcExpression::ObjectExpression(expr) => {
+                /*
+                 * struct oxc_ast::ast::ObjectExpression<'a>
+                 * - properties: oxc_allocator::Vec<'a, oxc_ast::ast::ObjectPropertyKind<'a>>
+                 */
+
+                for prop in &expr.properties {
+                    /*
+                     * enum oxc_ast::ast::ObjectPropertyKind<'a>
+                     * : ObjectProperty(Box<'a, ObjectProperty<'a>>)
+                     * : SpreadProperty(Box<'a, SpreadElement<'a>>)
+                     */
+
+                    match prop {
+                        /*
+                         * struct oxc_ast::ast::ObjectProperty<'a>
+                         * - value: oxc_ast::ast::Expression<'a>
+                         */
+                        OxcObjectPropertyKind::ObjectProperty(obj) => {
+                            self.expression(context, &obj.value);
+                        }
+
+                        /*
+                         * struct oxc_ast::ast::SpreadElement<'a>
+                         * - argument: oxc_ast::ast::Expression<'a>
+                         */
+                        OxcObjectPropertyKind::SpreadProperty(spread) => {
+                            self.expression(context, &spread.argument);
+                        }
+                    }
+                }
+            }
+
+            OxcExpression::ParenthesizedExpression(expr) => {
+                /*
+                 * struct oxc_ast::ast::ParenthesizedExpression<'a>
+                 * - expression: oxc_ast::ast::Expression<'a>
+                 */
+                self.expression(context, &expr.expression);
+            }
+
+            OxcExpression::SequenceExpression(expr) => {
+                /*
+                 * struct oxc_ast::ast::SequenceExpression<'a>
+                 * - expressions: oxc_allocator::Vec<oxc_ast::ast::Expression<'a>>
+                 */
+
+                for expr in &expr.expressions {
+                    self.expression(context, expr);
+                }
+            }
+
+            OxcExpression::TaggedTemplateExpression(expr) => {
+                /*
+                 * struct oxc_ast::ast::TaggedTemplateLiteral<'a>
+                 * - tag: oxc_ast::ast::Expression<'a>
+                 * - quasi: oxc_ast::ast::TemplateLiteral<'a>
+                 */
+
+                self.expression(context, &expr.tag);
+
+                /*
+                 * struct oxc_ast::ast::TemplateLiteral<'a>
+                 * - expressions: oxc_allocator::Vec<'a, oxc_ast::ast::Expression<'a>>
+                 *
+                 * quasis is ignored as it only contains static template text.
+                 */
+
+                for expr in &expr.quasi.expressions {
+                    self.expression(context, expr);
+                }
+            }
+
+            OxcExpression::UnaryExpression(expr) => {
+                /*
+                 * struct oxc_ast::ast::UnaryExpression<'a>
+                 * - argument: oxc_ast::ast::Expression<'a>
+                 */
+
+                self.expression(context, &expr.argument);
+            }
+
+            OxcExpression::UpdateExpression(expr) => {
+                /*
+                 * struct oxc_ast::ast::UpdateExpression<'a>
+                 * - argument: oxc_ast::ast::SimpleAssignmentTarget<'a>
+                 */
+
+                self.simple_assignment_target(context, &expr.argument);
+            }
+
+            OxcExpression::YieldExpression(expr) => {
+                /*
+                 * struct oxc_ast::ast::YieldExpression<'a>
+                 * - argument: Option<oxc_ast::ast::Expression<'a>>
+                 */
+
+                if let Some(expr) = &expr.argument {
+                    self.expression(context, expr);
+                }
+            }
+
+            OxcExpression::PrivateInExpression(expr) => {
+                /*
+                 * struct oxc_ast::ast::PrivateInExpression<'a>
+                 * - right: oxc_ast::ast::Expression<'a>
+                 */
+
+                self.expression(context, &expr.right);
+            }
+
+            OxcExpression::TSAsExpression(expr) => {
+                /*
+                 * struct oxc_ast::ast::TSAsExpression<'a>
+                 * - expression: oxc_ast::ast::Expression<'a>
+                 */
+
+                self.expression(context, &expr.expression);
+            }
+
+            OxcExpression::TSSatisfiesExpression(expr) => {
+                /*
+                 * struct oxc_ast::ast::TSSatisfiesExpression<'a>
+                 * - expression: oxc_ast::ast::Expression<'a>
+                 */
+
+                self.expression(context, &expr.expression);
+            }
+
+            OxcExpression::TSTypeAssertion(expr) => {
+                /*
+                 * struct oxc_ast::ast::TSTypeAssertion<'a>
+                 * - expression: oxc_ast::ast::Expression<'a>
+                 */
+
+                self.expression(context, &expr.expression);
+            }
+
+            OxcExpression::TSNonNullExpression(expr) => {
+                /*
+                 * struct oxc_ast::ast::TSNonNullExpression<'a>
+                 * - expression: oxc_ast::ast::Expression<'a>
+                 */
+
+                self.expression(context, &expr.expression);
+            }
+
+            OxcExpression::TSInstantiationExpression(expr) => {
+                /*
+                 * struct oxc_ast::ast::TSInstantiationExpression<'a>
+                 * - expression: oxc_ast::ast::Expression<'a>
+                 */
+
+                self.expression(context, &expr.expression);
+            }
+
+            _ => {
+                if let Some(expr) = expr.as_member_expression() {
+                    self.member(context, expr);
+                } else {
+                    unreachable!("unhandled oxc_ast::ast::Element | {expr:?}");
+                }
             }
         }
     }
 
-    fn visit_func_statement<'b>(
+    fn assignment_target(
         &mut self,
-        parent_context: usize,
-        current_context: usize,
-        func: &Function<'b>,
+        context: usize,
+        target: &OxcAssignmentTarget<'a>,
     ) {
-        let fn_context = if let Some(body) = &func.body {
-            self.build_context(
-                current_context,
-                Body::Statements(&body.statements),
-            )
+        /*
+         * enum oxc_ast::ast::AssignmentTarget<'a>
+         * : oxc_ast::ast::SimpleAssignmentTarget<'a> variants
+         * : oxc_ast::ast::AssignmentTargetPattern<'a> variants
+         */
+
+        if let Some(target) = target.as_simple_assignment_target() {
+            self.simple_assignment_target(context, target);
+        } else if let Some(target) = target.as_assignment_target_pattern() {
+            self.assignment_target_pattern(context, &target);
         } else {
-            current_context
-        };
-
-        let mut params = Vec::new();
-
-        for param in &func.params.items {
-            // let from = self.context_tree.get(fn_context).unwrap();
-
-            let bindings = self.collect_bindings(&param.pattern);
-
-            for binding in bindings {
-                params.push(binding.clone());
-                self.context_tree
-                    .get_mut(fn_context)
-                    .unwrap()
-                    .symbols
-                    .insert(
-                        binding,
-                        Symbol::Paramter {
-                            span: param.span,
-                            optional: param.optional,
-                        },
-                    );
-            }
-        }
-
-        if let Some(rest) = &func.params.rest {
-            let bindings = self.collect_bindings(&rest.rest.argument);
-
-            for binding in bindings {
-                params.push(binding.clone());
-                self.context_tree
-                    .get_mut(fn_context)
-                    .unwrap()
-                    .symbols
-                    .insert(binding, Symbol::ParameterRest { span: rest.span });
-            }
-        }
-
-        if let Some(name) = func.name() {
-            self.context_tree
-                .get_mut(fn_context)
-                .unwrap()
-                .symbols
-                .insert(
-                    name.to_string(),
-                    Symbol::Function {
-                        name: name.to_string(),
-                        params,
-                        context: fn_context,
-                    },
-                );
+            unreachable!(
+                "unhandled oxc_ast::ast::AssignmentTarget<'a> | {target:?}"
+            );
         }
     }
 
-    fn build_context<'b>(
+    fn assignment_target_maybe_default(
         &mut self,
-        current_context: usize,
-        body: Body<'b>,
-    ) -> usize {
-        match body {
-            Body::Statement(stmt) => {
-                let enum_entry = format!("{:?}", stmt);
-                let idx = enum_entry.find("(");
+        context: usize,
+        target: &OxcAssignmentTargetMaybeDefault<'a>,
+    ) {
+        /*
+         * enum oxc_ast::ast::AssignmentTargetMaybeDefault<'a>
+         * : AssignmentTargetWithDefault(Box<'a, oxc_ast::ast::AssignmentTargetWithDefault<'a>>)
+         * : oxc_ast::ast::AssignmentTarget<'a> variants
+         */
 
-                if let Some(idx) = idx {
-                    println!(
-                        "{} | current: {current_context}",
-                        &enum_entry[..idx]
-                    )
+        match &target {
+            OxcAssignmentTargetMaybeDefault::AssignmentTargetWithDefault(
+                target,
+            ) => {
+                /*
+                 * struct oxc_ast::ast::AssignmentTargetWithDefault<'a>
+                 * - binding: oxc_ast::ast::AssignmentTarget<'a>
+                 * - init: oxc_ast::ast::Expression<'a>
+                 */
+
+                self.assignment_target(context, &target.binding);
+                self.expression(context, &target.init);
+            }
+
+            _ => {
+                if let Some(target) = target.as_assignment_target() {
+                    self.assignment_target(context, target);
                 } else {
-                    println!("{enum_entry} | current: {current_context}",)
+                    unreachable!(
+                        "unhandled oxc_ast::ast::AssignmentTargetMaybeDefault<'a> | {target:?}"
+                    );
                 }
+            }
+        }
+    }
 
-                self.visit_statement(current_context, current_context, stmt);
-                current_context
+    fn assignment_target_pattern(
+        &mut self,
+        context: usize,
+        target: &OxcAssignmentTargetPattern<'a>,
+    ) {
+        match target {
+            OxcAssignmentTargetPattern::ArrayAssignmentTarget(target) => {
+                /*
+                 * struct oxc_ast::ast::ArrayAssignmentTarget<'a>
+                 * - elements: oxc_allocator::Vec<'a, Option<AssignmentTargetMaybeDefault<'a>>>
+                 * - rest: Option<Box<'a, AssignmentTargetRest<'a>>>
+                 */
+
+                for elem in &target.elements {
+                    let Some(elem) = elem else {
+                        continue;
+                    };
+
+                    self.assignment_target_maybe_default(context, elem);
+                }
             }
 
-            Body::Statements(stmts) => {
-                let new_context = self.new_context(current_context);
+            OxcAssignmentTargetPattern::ObjectAssignmentTarget(target) => {
+                /*
+                 * struct oxc_ast::ast::ObjectAssignmentTarget<'a>
+                 * - properties: oxc_allocator::Vec<'a, oxc_ast::ast::AssignmentTargetProperty<'a>>
+                 * - rest: Option<Box<'a, oxc_ast::ast::AssignmentTargetRest<'a>>>,
+                 */
 
-                for stmt in stmts {
-                    let enum_entry = format!("{:?}", stmt);
-                    let idx = enum_entry.find("(");
+                for prop in &target.properties {
+                    /*
+                     * enum oxc_ast::ast::AssignmentTargetProperty<'a>
+                     * : AssignmentTargetPropertyIdentifier(Box<'a, AssignmentTargetPropertyIdentifier<'a>>)
+                     * : AssignmentTargetPropertyProperty(Box<'a, AssignmentTargetPropertyProperty<'a>>)
+                     */
 
-                    if let Some(idx) = idx {
-                        println!(
-                            "{} | parent: {current_context} | current: {new_context}",
-                            &enum_entry[..idx]
-                        )
-                    } else {
-                        println!(
-                            "{enum_entry} | parent: {current_context} | current: {new_context}",
-                        )
+                    match prop {
+                        /*
+                         * struct oxc_ast::ast::AssignmentTargetPropertyIdentifier<'a> 
+                         * - binding: oxc_ast::ast::IdentifierReference<'a>
+                         * - init: Option<Expression<'a>>
+                         */
+
+                        OxcAssignmentTargetProperty::AssignmentTargetPropertyIdentifier(ident) => {
+                            /*
+                            * struct oxc_ast::ast::IdentifierReference<'a>
+                            * - span: oxc_span::Span
+                            */
+
+                            self.uses.push(
+                                SymbolUse {
+                                    span: ident.span,
+                                    context
+                                }
+                            );
+
+                        }
+
+                        OxcAssignmentTargetProperty::AssignmentTargetPropertyProperty(property) => {
+                            /*
+                             * struct oxc_ast::ast::AssignmentTargetPropertyProperty<'a>
+                             * - binding: oxc_ast::ast::AssignmentTargetMaybeDefault<'a>
+                             */
+
+                            self.assignment_target_maybe_default(context, &property.binding);
+                        }
                     }
-
-                    self.visit_statement(current_context, new_context, &stmt)
                 }
+            }
+        }
+    }
 
-                new_context
+    fn simple_assignment_target(
+        &mut self,
+        context: usize,
+        target: &OxcSimpleAssignmentTarget<'a>,
+    ) {
+        match target {
+            OxcSimpleAssignmentTarget::AssignmentTargetIdentifier(target) => {
+                /*
+                 * struct oxc_ast::ast::IdentifierReference<'a>
+                 * - span: oxc_span::Span
+                 */
+
+                self.uses.push(SymbolUse {
+                    span: target.span,
+                    context,
+                });
             }
 
-            Body::Expression(expr) => match expr {
-                OxcExpression::ArrowFunctionExpression(arrow_func) => {
-                    println!(
-                        "ArrowFunctionExpression | parent: {current_context} | current: {current_context}",
-                    );
-                    self.visit_arrow_statement(
-                        current_context,
-                        current_context,
-                        &arrow_func,
-                    );
+            OxcSimpleAssignmentTarget::TSAsExpression(target) => {
+                /*
+                 * struct oxc_ast::ast::TSAsExpression<'a>
+                 * - expression: oxc_ast::ast::Expression<'a>
+                 */
 
-                    current_context
+                self.expression(context, &target.expression);
+            }
+
+            OxcSimpleAssignmentTarget::TSSatisfiesExpression(target) => {
+                /*
+                 * struct oxc_ast::ast::TSSatisfiesExpression<'a>
+                 * - expression: oxc_ast::ast::Expression<'a>
+                 */
+
+                self.expression(context, &target.expression);
+            }
+
+            OxcSimpleAssignmentTarget::TSNonNullExpression(target) => {
+                /*
+                 * struct oxc_ast::ast::TSNonNullExpression<'a>
+                 * - expression: oxc_ast::ast::Expression<'a>
+                 */
+
+                self.expression(context, &target.expression);
+            }
+
+            OxcSimpleAssignmentTarget::TSTypeAssertion(target) => {
+                /*
+                 * struct oxc_ast::ast::TSTypeAssertion<'a>
+                 * - expression: oxc_ast::ast::Expression<'a>
+                 */
+
+                self.expression(context, &target.expression);
+            }
+
+            _ => {
+                if let Some(member) = target.as_member_expression() {
+                    self.member(context, member);
+                } else {
+                    unreachable!(
+                        "unhandled oxc_ast::ast::SimpleAssignmentTarget<'a> | {target:?}"
+                    );
                 }
+            }
+        }
+    }
 
-                OxcExpression::FunctionExpression(func_expr) => {
-                    println!(
-                        "FunctionExpression | parent: {current_context} | current: {current_context}",
-                    );
+    fn function_body(
+        &mut self,
+        context: usize,
+        body: &OxcFunctionBody<'a>,
+    ) -> OxcSpan {
+        // NOTE: we do NOT create a new context here. instead, we use the context passed in to the
+        // parameter. this is done, so creation of the context and scanning the function body can
+        // remain uncoupled.
 
-                    self.visit_func_statement(
-                        current_context,
-                        current_context,
-                        &func_expr,
-                    );
+        /*
+         * struct oxc_ast::ast::FunctionBody<'a>
+         * - span: oxc_ast::ast::Span
+         * - statements: oxc_allocator::Vec<'a, oxc_ast::ast::Statement<'a>>
+         */
 
-                    current_context
+        for stmt in &body.statements {
+            self.statement(context, stmt)
+        }
+
+        body.span
+    }
+
+    fn formal_parameters(
+        &mut self,
+        context: usize,
+        params: &OxcFormalParameters<'a>,
+    ) {
+        /*
+         * struct oxc_ast::ast::FormalParameters<'a>
+         * - items: oxc_allocator::Vec<'a, FormalParameter<'a>>,
+         * - rest: Option<Box<'a, FormalParameterRest<'a>>>,
+         */
+
+        for (order, param) in params.items.iter().enumerate() {
+            /*
+             * struct oxc_ast::ast::FormalParameter<'a>
+             * - pattern: oxc_ast::ast::BindingPattern<'a>
+             * - initializer: Option<Box<'a, Expression<'a>>>
+             */
+
+            let type_annotation = if let Some(t) = &param.type_annotation {
+                Some(self.type_annotation(&t.type_annotation))
+            } else {
+                None
+            };
+
+            self.binding(
+                context,
+                Symbol::Parameter {
+                    span: param.span,
+                    optional: param.optional,
+                    order,
+                    type_annotation,
+                },
+                &param.pattern,
+            );
+
+            if let Some(init) = &param.initializer {
+                self.expression(context, init);
+            }
+        }
+
+        /*
+         * struct oxc_ast::ast::FormalParametersRest<'a>
+         * - rest: BindingRestElement<'a>
+         */
+
+        if let Some(rest) = &params.rest {
+            /*
+             * struct oxc_ast::ast::BindingRestElement<'a>
+             * - argument: oxc_ast::ast::BindingPattern<'a>
+             */
+            self.binding(
+                context,
+                Symbol::ParameterRest { span: rest.span },
+                &rest.rest.argument,
+            );
+        }
+    }
+
+    fn callee_arguments(
+        &mut self,
+        context: usize,
+        callee: &OxcExpression<'a>,
+        args: &OxcVec<'a, OxcArgument<'a>>,
+    ) {
+        self.expression(context, callee);
+
+        for arg in args {
+            /*
+             * enum oxc_ast::ast::Argument<'a>
+             * : SpreadElement(oxc_ast::ast::SpreadElement)
+             * : oxc_ast::ast::Element<'a> variants
+             */
+
+            match arg {
+                /*
+                 * struct oxc_ast::ast::SpreadElement<'a>
+                 * - argument: oxc_ast::ast::Expression<'a>
+                 */
+                OxcArgument::SpreadElement(spread) => {
+                    self.expression(context, &spread.argument);
                 }
 
                 _ => {
-                    unreachable!()
+                    if let Some(expr) = arg.as_expression() {
+                        self.expression(context, expr);
+                    } else {
+                        unreachable!(
+                            "unhandled oxc_ast::ast::Argument<'a> | {arg:?}"
+                        );
+                    }
                 }
-            },
-        }
-    }
-
-    pub fn resolve_symbol(
-        &self,
-        present_context: usize,
-        symbol_name: &str,
-    ) -> Option<Symbol> {
-        if present_context >= self.context_tree.len() {
-            panic!(
-                "invalid present context {}. there are {} contexts",
-                present_context,
-                self.context_tree.len()
-            );
-        }
-
-        let ctxt = self.context_tree.get(present_context).unwrap();
-
-        let symbol = ctxt.symbols.get(symbol_name);
-
-        if symbol.is_some() {
-            if present_context == 0 {
-                // we return Some(Symbol) only IF it was found at the global context
-                Some(symbol.unwrap().clone())
-            } else {
-                None
-            }
-        } else {
-            if ctxt.parent == present_context {
-                // global context
-                None
-            } else {
-                self.resolve_symbol(ctxt.parent, symbol_name)
             }
         }
     }
 
-    pub fn analyze_statement<'b>(
+    fn binding(
         &mut self,
-        current_context: usize,
-        stmt: &OxcStatement<'b>,
+        context: usize,
+        symbol: Symbol,
+        pattern: &OxcBindingPattern<'a>,
     ) {
-        // any statement that has the potential to open a scope, will track it
-        // we are guaranteed to visit the expressions in the same order we discovered them
+        /*
+         * enum oxc_ast::ast::BindingPattern<'a>
+         * : BindingIdentifier(Box<'a, BindingIdentifier<'a>>)
+         * : ObjectPattern(Box<'a, ObjectPattern<'a>>)
+         * : ArrayPattern(Box<'a, ArrayPattern<'a>>)
+         * : AssignmentPattern(Box<'a, AssignmentPattern<'a>>)
+         */
 
+        match pattern {
+            OxcBindingPattern::BindingIdentifier(ident) => {
+                /*
+                 * struct oxc_ast::ast::BindingIdentifier<'a>
+                 * - name: Ident<'a>
+                 */
+                self.insert_in_context(context, ident.name.to_string(), symbol)
+            }
+
+            OxcBindingPattern::ObjectPattern(obj) => {
+                /*
+                 * struct oxc_ast::ast::ObjectPattern<'a>
+                 * - properties: oxc_allocator::Vec<'a, oxc_ast::ast::BindingProperty<'a>>
+                 */
+
+                for prop in &obj.properties {
+                    /*
+                     *struct oxc_ast::ast::BindingProperty<'a>
+                     *- value: oxc_ast::ast::BindingPattern<'a>
+                     */
+                    self.binding(context, symbol.clone(), &prop.value)
+                }
+            }
+
+            OxcBindingPattern::ArrayPattern(arr) => {
+                /*
+                 * struct oxc_ast::ast::ArrayPattern<'a>
+                 * - elements: oxc_allocator::Vec<'a, Option<BindingPattern<'a>>>
+                 * - rest: Option<Box<'a, BindingRestElement<'a>>>
+                 */
+
+                for elem in &arr.elements {
+                    if let Some(pattern) = elem {
+                        self.binding(context, symbol.clone(), pattern);
+                    }
+                }
+
+                if let Some(rest) = &arr.rest {
+                    /*
+                     * struct oxc_ast::ast::BindingRestElement<'a>
+                     * - argument: oxc_ast::ast::BindingPattern<'a>
+                     */
+                    self.binding(context, symbol, &rest.argument);
+                }
+            }
+
+            OxcBindingPattern::AssignmentPattern(assign) => {
+                /*
+                 * struct oxc_ast::ast::AssignmentPattern<'a>
+                 * - left: oxc_ast::ast::BindingPattern<'a>
+                 * - right: oxc_ast::ast::Expression<'a>
+                 */
+                self.binding(context, symbol, &assign.left);
+                self.expression(context, &assign.right);
+            }
+        }
+    }
+
+    fn member(&mut self, context: usize, expr: &OxcMemberExpression<'a>) {
+        /*
+         * enum oxc_ast::ast::MemberExpression<'a>
+         * : ComputedMemberExpression(Box<'a, ComputedMemberExpression<'a>>)
+         * : StaticMemberExpression(Box<'a, StaticMemberExpression<'a>>)
+         * : PrivateFieldExpression(Box<'a, PrivateFieldExpression<'a>>)
+         */
+
+        match expr {
+            /*
+             * struct oxc_ast::ast::ComputedMemberExpression<'a>
+             * - object: oxc_ast::ast::Expression<'a>
+             * - expression: oxc_ast::ast::Expression<'a>
+             */
+            OxcMemberExpression::ComputedMemberExpression(expr) => {
+                self.expression(context, &expr.object);
+                self.expression(context, &expr.expression);
+            }
+
+            /*
+             * struct oxc_ast::ast::StaticMemberExpression<'a>
+             * - object: oxc_ast::ast::Expression<'a>
+             */
+            OxcMemberExpression::StaticMemberExpression(expr) => {
+                self.expression(context, &expr.object);
+            }
+
+            /*
+             * struct oxc_ast::ast::PrivateFieldExpression<'a>
+             * - object: oxc_ast::ast::Expression<'a>
+             */
+            OxcMemberExpression::PrivateFieldExpression(expr) => {
+                self.expression(context, &expr.object);
+            }
+        }
+    }
+
+    fn statement(&mut self, context: usize, stmt: &OxcStatement<'a>) {
         match stmt {
-            OxcStatement::VariableDeclaration(decl) => {
-                for decl in &decl.declarations {
-                    if let Some(init) = &decl.init {
-                        self.analyze_expression(current_context, &init);
-                    }
-                }
-            }
+            // these need not be visited
+            OxcStatement::BreakStatement(_) => return,
+            OxcStatement::ContinueStatement(_) => return,
+            OxcStatement::DebuggerStatement(_) => return,
+            OxcStatement::EmptyStatement(_) => return,
+            OxcStatement::ClassDeclaration(_) => return,
 
-            OxcStatement::FunctionDeclaration(func) => {
-                for param in &func.params.items {
-                    if let Some(init) = &param.initializer {
-                        self.analyze_expression(current_context, init);
-                    }
-                }
+            // statements
+            OxcStatement::BlockStatement(stmt) => {
+                /*
+                 * struct oxc_ast::ast::BlockStatement<'a>
+                 * - body: oxc_allocator::Vec<'a, oxc_ast::ast::Statement<'a>>
+                 */
 
-                if let Some(body) = &func.body {
-                    let fn_context = self.enter_context();
-                    self.analyze_use(
-                        fn_context,
-                        Body::Statements(&body.statements),
-                    );
-                }
-            }
-
-            OxcStatement::ForStatement(for_stmt) => {
-                let for_context = self.enter_context();
-                if let Some(init) = &for_stmt.init {
-                    match init {
-                        ForStatementInit::VariableDeclaration(decl) => {
-                            for decl in &decl.declarations {
-                                if let Some(init) = &decl.init {
-                                    self.analyze_expression(
-                                        current_context,
-                                        &init,
-                                    );
-                                }
-                            }
-                        }
-                        _ => {
-                            self.analyze_expression(
-                                current_context,
-                                &init.as_expression().unwrap(),
-                            );
-                        }
-                    }
-                }
-
-                self.analyze_use(for_context, Body::Statement(&for_stmt.body));
-            }
-
-            OxcStatement::ForInStatement(for_in_stmt) => {
-                let for_context = self.enter_context();
-
-                self.analyze_expression(current_context, &for_in_stmt.right);
-
-                self.analyze_use(
-                    for_context,
-                    Body::Statement(&for_in_stmt.body),
-                );
-            }
-
-            OxcStatement::ForOfStatement(for_of_stmt) => {
-                let for_context = self.enter_context();
-
-                self.analyze_expression(current_context, &for_of_stmt.right);
-
-                self.analyze_use(
-                    for_context,
-                    Body::Statement(&for_of_stmt.body),
-                );
-            }
-
-            OxcStatement::IfStatement(stmt) => {
-                self.analyze_expression(current_context, &stmt.test);
-
-                self.analyze_use(
-                    current_context,
-                    Body::Statement(&stmt.consequent),
-                );
-
-                if let Some(alternate) = &stmt.alternate {
-                    self.analyze_use(
-                        current_context,
-                        Body::Statement(&alternate),
-                    );
-                }
-            }
-
-            OxcStatement::WhileStatement(stmt) => {
-                self.analyze_expression(current_context, &stmt.test);
-                self.analyze_use(current_context, Body::Statement(&stmt.body));
+                let new_context = self.create_context(context);
+                self.statements(new_context, &stmt.body);
             }
 
             OxcStatement::DoWhileStatement(stmt) => {
-                self.analyze_expression(current_context, &stmt.test);
+                /*
+                 * struct oxc_ast::ast::DoWhileStatement<'a>
+                 * - body: oxc_ast::ast::Statement<'a>
+                 */
 
-                self.analyze_use(current_context, Body::Statement(&stmt.body));
+                self.expression(context, &stmt.test);
+                self.statement(context, &stmt.body);
             }
 
-            OxcStatement::WithStatement(stmt) => {
-                self.analyze_expression(current_context, &stmt.object);
-                self.analyze_use(current_context, Body::Statement(&stmt.body));
+            OxcStatement::ExpressionStatement(stmt) => {
+                /*
+                 * struct oxc_ast::ast::ExpressionStatement<'a>
+                 * - expression: oxc_ast::ast::Expression<'a>
+                 */
+
+                self.expression(context, &stmt.expression);
+            }
+
+            OxcStatement::ForInStatement(stmt) => {
+                /*
+                 * struct oxc_ast::ast::ForInStatement<'a>
+                 * - left: oxc_ast::ast::ForStatementLeft<'a>
+                 * - right: oxc_ast::ast::Expression<'a>
+                 * - body: oxc_ast::ast::Statement<'a>
+                 */
+
+                let new_context = self.create_context(context);
+
+                match &stmt.left {
+                    /*
+                     * enum oxc_ast::ast::ForStatementLeft<'a>
+                     * : oxc_ast::ast::VariableDeclaration(Box<'a, oxc_ast::ast:VariableDeclaration<'a>)
+                     * : oxc_ast::ast::AssignmentTarget<'a> variants
+                     */
+                    OxcForStatementLeft::VariableDeclaration(decl) => {
+                        self.var_decl(new_context, decl);
+                    }
+
+                    _ => {
+                        if let Some(stmt) = stmt.left.as_assignment_target() {
+                            self.assignment_target(context, stmt);
+                        } else {
+                            unreachable!(
+                                "unhandled oxc_ast::ast::ForStatementLeft<'a> | {:?}",
+                                stmt.left
+                            )
+                        }
+                    }
+                }
+
+                self.expression(context, &stmt.right);
+                self.statement(new_context, &stmt.body);
+            }
+
+            OxcStatement::ForOfStatement(stmt) => {
+                /*
+                 * struct oxc_ast::ast::ForOfStatement<'a>
+                 * - left: oxc_ast::ast::ForStatementLeft<'a>
+                 * - right: oxc_ast::ast::Expression<'a>
+                 * - body: oxc_ast::ast::Statement<'a>
+                 */
+
+                let new_context = self.create_context(context);
+
+                match &stmt.left {
+                    /*
+                     * enum oxc_ast::ast::ForStatementLeft<'a>
+                     * : oxc_ast::ast::VariableDeclaration(Box<'a, oxc_ast::ast:VariableDeclaration<'a>)
+                     * : oxc_ast::ast::AssignmentTarget<'a> variants
+                     */
+                    OxcForStatementLeft::VariableDeclaration(decl) => {
+                        self.var_decl(new_context, decl);
+                    }
+
+                    _ => {
+                        if let Some(stmt) = stmt.left.as_assignment_target() {
+                            self.assignment_target(context, stmt);
+                        } else {
+                            unreachable!(
+                                "unhandled oxc_ast::ast::ForStatementLeft<'a> | {:?}",
+                                stmt.left
+                            )
+                        }
+                    }
+                }
+
+                self.expression(context, &stmt.right);
+                self.statement(new_context, &stmt.body);
+            }
+
+            OxcStatement::ForStatement(stmt) => {
+                /*
+                 * struct oxc_ast::ast::ForStatement<'a>
+                 * - init: Option<oxc_ast::ast::ForStatementInit<'a>>
+                 * - test: Option<oxc_ast::ast::Expression<'a>>
+                 * - update: Option<oxc_ast::ast::Expression<'a>>
+                 * - body: oxc_ast::ast::Statement<'a>
+                 */
+
+                let new_context = self.create_context(context);
+
+                if let Some(init) = &stmt.init {
+                    match init {
+                        /*
+                         * enum oxc_ast::ast::ForStatementInit<'a>
+                         * : oxc_ast::ast::VariableDeclaration(Box<'a, oxc_ast::ast:VariableDeclaration<'a>)
+                         * : oxc_ast::ast::Expression<'a> variants
+                         */
+                        OxcForStatementInit::VariableDeclaration(decl) => {
+                            self.var_decl(new_context, decl);
+                        }
+
+                        _ => {
+                            if let Some(expr) = init.as_expression() {
+                                self.expression(context, expr);
+                            } else {
+                                unreachable!(
+                                    "unhandled oxc_ast::ast::ForStatementInit<'a> | {init:?}"
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            OxcStatement::IfStatement(stmt) => {
+                /*
+                 * struct oxc_ast::ast::IfStatement<'a>
+                 * - test: oxc_ast::ast::Expression<'a>
+                 * - consequent: oxc_ast::ast::Statement<'a>
+                 * - alternate: Option<oxc_ast::ast::Statement<'a>>
+                 */
+                self.expression(context, &stmt.test);
+                self.statement(context, &stmt.consequent);
+
+                if let Some(alternate) = &stmt.alternate {
+                    self.statement(context, alternate);
+                }
             }
 
             OxcStatement::LabeledStatement(stmt) => {
-                self.analyze_use(current_context, Body::Statement(&stmt.body));
+                /*
+                 * struct oxc_ast::ast::LabeledStatement<'a>
+                 * - body: Option<oxc_ast::ast::Statement<'a>>
+                 */
+                self.statement(context, &stmt.body);
             }
 
-            OxcStatement::TryStatement(stmt) => {
-                self.analyze_use(
-                    current_context,
-                    Body::Statements(&stmt.block.body),
-                );
+            OxcStatement::ReturnStatement(stmt) => {
+                /*
+                 * struct oxc_ast::ast::ReturnStatement<'a>
+                 * - argument: Option<oxc_ast::ast::Expression<'a>>
+                 */
 
-                // catch
-                if let Some(catch_block) = &stmt.handler {
-                    self.analyze_use(
-                        current_context,
-                        Body::Statements(&catch_block.body.body),
-                    );
-                }
-
-                // finally
-                if let Some(finally_block) = &stmt.finalizer {
-                    self.analyze_use(
-                        current_context,
-                        Body::Statements(&finally_block.body),
-                    );
+                if let Some(arg) = &stmt.argument {
+                    self.expression(context, arg);
                 }
             }
 
             OxcStatement::SwitchStatement(stmt) => {
-                let switch_context = self.enter_context();
+                /*
+                 * struct oxc_ast::ast::SwitchStatement<'a>
+                 * - discriminant: oxc_ast::ast::Expression<'a>
+                 * - cases: oxc_allocator::Vec<'a, oxc_ast::ast::SwitchCase<'a>>
+                 */
 
-                self.analyze_expression(current_context, &stmt.discriminant);
+                let new_context = self.create_context(context);
+
+                self.expression(context, &stmt.discriminant);
 
                 for case in &stmt.cases {
+                    /*
+                     * struct oxc_ast::ast::SwitchCase<'a>
+                     * - test: Option<oxc_ast::ast::Expression<'a>> - consequent: oxc_allocator::Vec<'a, oxc_ast::ast::Statement<'a>>
+                     */
+
                     if let Some(test) = &case.test {
-                        self.analyze_expression(current_context, test);
+                        self.expression(context, test);
                     }
 
-                    self.analyze_use(
-                        switch_context,
-                        Body::Statements(&case.consequent),
-                    );
-                }
-            }
-
-            OxcStatement::BlockStatement(stmt) => {
-                let block_context = self.enter_context();
-                self.analyze_use(block_context, Body::Statements(&stmt.body));
-            }
-
-            OxcStatement::ExpressionStatement(expr) => {
-                self.analyze_expression(current_context, &expr.expression);
-            }
-
-            OxcStatement::ReturnStatement(stmt) => {
-                if let Some(argument) = &stmt.argument {
-                    self.analyze_expression(current_context, argument);
+                    self.statements(new_context, &case.consequent);
                 }
             }
 
             OxcStatement::ThrowStatement(stmt) => {
-                self.analyze_expression(current_context, &stmt.argument);
-            }
-            _ => return,
-        }
-    }
+                /*
+                 * struct oxc_ast::ast::ThrowStatement<'a>
+                 * - argument: oxc_ast::ast::Expression<'a>
+                 */
 
-    pub fn analyze_assignment_target<'b>(
-        &mut self,
-        current_context: usize,
-        target: &AssignmentTarget<'b>,
-    ) {
-        match target {
-            AssignmentTarget::AssignmentTargetIdentifier(ident) => {
-                let name = ident.name.to_string();
-
-                if let Some(symbol) =
-                    self.resolve_symbol(current_context, &name)
-                {
-                    self.uses.push(ident.span)
-                }
+                self.expression(context, &stmt.argument);
             }
 
-            AssignmentTarget::TSAsExpression(as_expr) => {
-                self.analyze_expression(current_context, &as_expr.expression);
-            }
+            OxcStatement::TryStatement(stmt) => {
+                /*
+                 * struct oxc_ast::ast::TryStatement<'a>
+                 * - block: Box<'a, oxc_ast::ast::BlockStatement<'a>>
+                 * - handler: Option<Box<'a, CatchClause<'a>>>
+                 * - finalizer: Option<Box<'a, BlockStatement<'a>>>
+                 */
 
-            AssignmentTarget::TSSatisfiesExpression(satisfies) => {
-                self.analyze_expression(current_context, &satisfies.expression);
-            }
+                let try_context = self.create_context(context);
+                self.statements(try_context, &stmt.block.body);
 
-            AssignmentTarget::TSNonNullExpression(non_null) => {
-                self.analyze_expression(current_context, &non_null.expression);
-            }
+                if let Some(catch) = &stmt.handler {
+                    /*
+                     * struct oxc_ast::ast::CatchClause<'a>
+                     * - param: Option<oxc_ast::ast::CatchParameter<'a>>
+                     * - body: Box<'a, BlockStatement<'a>>
+                     */
 
-            AssignmentTarget::TSTypeAssertion(assert) => {
-                self.analyze_expression(current_context, &assert.expression);
-            }
-
-            AssignmentTarget::ArrayAssignmentTarget(target) => {
-                for elem in &target.elements {
-                    if let Some(elem) = elem {
-                        match elem {
-                            AssignmentTargetMaybeDefault::AssignmentTargetWithDefault(default) => {
-                                self.analyze_assignment_target(current_context, &default.binding);
-                                self.analyze_expression(current_context, &default.init);
-                            }
-                            _ => {
-                                if let Some(elem) = elem.as_assignment_target() {
-
-                                self.analyze_assignment_target(current_context, elem);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            AssignmentTarget::ObjectAssignmentTarget(target) => {
-                for prop in &target.properties {
-                    match prop {
-                        AssignmentTargetProperty::AssignmentTargetPropertyIdentifier(ident)=> {
-                            if let Some(init) = &ident.init {
-                                self.analyze_expression(current_context, &init);
-                            }
-                        }
-
-                        AssignmentTargetProperty::AssignmentTargetPropertyProperty(prop) => {
-                            match &prop.binding {
-                                 AssignmentTargetMaybeDefault::AssignmentTargetWithDefault(def) => {
-                                    self.analyze_expression(current_context, &def.init);
-                                 }
-
-                                 _ => {
-                                     self.analyze_assignment_target(current_context, prop.binding.to_assignment_target());
-                                 }
-                            }
-                        }
-                    }
-                }
-            }
-
-            _ => {
-                self.analyze_expression(
-                    current_context,
-                    &target.to_member_expression().as_expression(),
-                );
-            }
-        }
-    }
-
-    pub fn analyze_expression<'b>(
-        &mut self,
-        current_context: usize,
-        expr: &OxcExpression<'b>,
-    ) {
-        match expr {
-            OxcExpression::TemplateLiteral(literal) => {
-                for expression in &literal.expressions {
-                    self.analyze_expression(current_context, expression);
-                }
-            }
-
-            OxcExpression::Identifier(ident) => {
-                let name = ident.name.to_string();
-
-                if let Some(symbol) =
-                    self.resolve_symbol(current_context, &name)
-                {
-                    self.uses.push(ident.span)
-                }
-            }
-
-            OxcExpression::ArrayExpression(arr) => {
-                for elem in &arr.elements {
-                    match elem {
-                        ArrayExpressionElement::SpreadElement(elem) => {
-                            self.analyze_expression(
-                                current_context,
-                                &elem.argument,
-                            );
-                        }
-
-                        ArrayExpressionElement::Elision(elision) => {
-                            // this node only stores a span. nothing to visit.
-                            continue;
-                        }
-
-                        _ => {
-                            self.analyze_expression(
-                                current_context,
-                                &elem.to_expression(),
-                            );
-                        }
-                    }
-                }
-            }
-
-            OxcExpression::ArrowFunctionExpression(arrow_func) => {
-                for param in &arrow_func.params.items {
-                    if let Some(init) = &param.initializer {
-                        self.analyze_expression(current_context, init);
-                    }
-                }
-
-                let arrow_context = self.enter_context();
-                match &arrow_func.body {
-                    ArrowFunctionBody::FunctionBody(body) => self.analyze_use(
-                        arrow_context,
-                        Body::Statements(&body.statements),
-                    ),
-
-                    _ => {
-                        self.analyze_expression(
-                            arrow_context,
-                            &arrow_func.body.to_expression(),
+                    let catch_context = if let Some(param) = &catch.param {
+                        // this creates a `context -> [clause context] -> block statement` kind of structure
+                        // on the contex tree, but it gets the job done without over-complicating the
+                        // signatures or structures
+                        let new_context = self.create_context(context);
+                        self.binding(
+                            new_context,
+                            Symbol::Variable {
+                                span: param.span,
+                                type_annotation: None,
+                            },
+                            &param.pattern,
                         );
-                    }
+
+                        new_context
+                    } else {
+                        context
+                    };
+
+                    self.statements(catch_context, &catch.body.body);
+                }
+
+                if let Some(fin) = &stmt.finalizer {
+                    let fin_context = self.create_context(context);
+                    self.statements(fin_context, &fin.body);
                 }
             }
 
-            OxcExpression::AssignmentExpression(assignment) => {
-                self.analyze_assignment_target(
-                    current_context,
-                    &assignment.left,
-                );
-
-                self.analyze_expression(current_context, &assignment.right);
+            OxcStatement::WhileStatement(stmt) => {
+                /*
+                 * struct oxc_ast::ast::WhileStatement<'a>
+                 * - test: Option<oxc_ast::ast::Expression<'a>>
+                 * - body: Option<oxc_ast::ast::Statement<'a>>
+                 */
+                self.expression(context, &stmt.test);
+                self.statement(context, &stmt.body);
             }
 
-            OxcExpression::BinaryExpression(expr) => {
-                self.analyze_expression(current_context, &expr.left);
-                self.analyze_expression(current_context, &expr.right);
+            OxcStatement::WithStatement(stmt) => {
+                /*
+                 * struct oxc_ast::ast::WithStatement<'a>
+                 * - object: oxc_ast::ast::Expression<'a>
+                 * - body: Option<oxc_ast::ast::Statement<'a>>
+                 */
+
+                self.expression(context, &stmt.object);
+                self.statement(context, &stmt.body);
             }
 
-            OxcExpression::CallExpression(call) => {
-                self.analyze_expression(current_context, &call.callee);
-                for arg in &call.arguments {
-                    match arg {
-                        Argument::SpreadElement(elem) => {
-                            self.analyze_expression(
-                                current_context,
-                                &elem.argument,
-                            );
-                        }
-
-                        _ => {
-                            self.analyze_expression(
-                                current_context,
-                                arg.to_expression(),
-                            );
-                        }
-                    }
-                }
+            // declarations
+            OxcStatement::VariableDeclaration(stmt) => {
+                self.var_decl(context, &stmt);
             }
 
-            OxcExpression::ChainExpression(chain) => match &chain.expression {
-                ChainElement::CallExpression(call) => {
-                    self.analyze_expression(current_context, &call.callee);
-                    for arg in &call.arguments {
-                        match arg {
-                            Argument::SpreadElement(elem) => {
-                                self.analyze_expression(
-                                    current_context,
-                                    &elem.argument,
-                                );
-                            }
+            OxcStatement::FunctionDeclaration(stmt) => {
+                /*
+                 * - params: Box<'a, oxc_ast::ast::FormalParameters<'a>>,
+                 * struct oxc_ast::ast::FunctionDeclaration<'a>
+                 * - body: oxc_ast::ast::FunctionBody<'a>,
+                 * - id: Option<oxc_ast::ast::BindingIdentifier<'a>> // required
+                 * - type_parameters: Option<Box<'a, oxc_ast::ast::TSTypeParameterDeclaration>>
+                 * - return_type: Option<Box<'a, oxc_ast::ast::TSTypeAnnotation>>
+                 */
 
-                            _ => {
-                                self.analyze_expression(
-                                    current_context,
-                                    arg.to_expression(),
-                                );
-                            }
-                        }
-                    }
-                }
+                let new_context = self.create_context(context);
 
-                ChainElement::TSNonNullExpression(expr) => {
-                    self.analyze_expression(current_context, &expr.expression);
-                }
+                self.formal_parameters(new_context, &stmt.params);
 
-                _ => {
-                    self.analyze_expression(
-                        current_context,
-                        chain.expression.to_member_expression().as_expression(),
+                let body = if let Some(body) = &stmt.body {
+                    Some(self.function_body(new_context, body))
+                } else {
+                    None
+                };
+
+                let return_type = if let Some(an) = &stmt.return_type {
+                    Some(self.type_annotation(&an.type_annotation))
+                } else {
+                    None
+                };
+
+                let generics = if let Some(generic) = &stmt.type_parameters {
+                    Some(generic.span)
+                } else {
+                    None
+                };
+
+                if let Some(id) = &stmt.id {
+                    self.insert_in_context(
+                        context,
+                        id.name.to_string(),
+                        Symbol::Function {
+                            name: id.name.to_string(),
+                            context: context,
+                            body,
+                            return_type,
+                            generics,
+                        },
                     );
+                }
+            }
+
+            OxcStatement::TSTypeAliasDeclaration(stmt) => {
+                /*
+                 * struct oxc_ast::ast::TSTypeAliasDeclaration
+                 * - id: oxc_ast::ast::BindingIdentifier<'a>
+                 * - type_parameters: Option<Box<'a, oxc_ast::ast::TSTypeParameterDeclaration<'a>>>
+                 * - type_annotation: oxc_ast::ast::TSTypeAnnotation<'a>
+                 */
+
+                let type_annotation =
+                    self.type_annotation(&stmt.type_annotation);
+
+                let generics = if let Some(generic) = &stmt.type_parameters {
+                    Some(generic.span)
+                } else {
+                    None
+                };
+
+                self.insert_in_context(
+                    context,
+                    stmt.id.name.to_string(),
+                    Symbol::Type(NamedType::Alias {
+                        type_annotation,
+                        generics,
+                    }),
+                );
+            }
+
+            OxcStatement::TSInterfaceDeclaration(stmt) => {
+                /*
+                 * struct oxc_ast::ast::TSInterfaceDeclaration
+                 * - id: oxc_ast::ast::BindingIdentifier<'a>
+                 * - type_parameters: Option<Box<'a, oxc_ast::ast::TSTypeParameterDeclaration<'a>>>
+                 * - body: Box<'a, oxc_ast::ast::TSInterfaceBody<'a>>
+                 */
+
+                let generics = if let Some(generic) = &stmt.type_parameters {
+                    Some(generic.span)
+                } else {
+                    None
+                };
+
+                let mut fields = Vec::new();
+
+                /*
+                 * struct oxc_ast::ast::TSInterfaceBody
+                 * - body: Box<'a, oxc_ast::ast::TSSignature<'a>>
+                 */
+                for field in &stmt.body.body {
+                    match field {
+                        OxcTSSignature::TSIndexSignature(sig) => fields.push((
+                            None,
+                            TypeAnnotation::Disallowed((
+                                sig.span,
+                                "index signature",
+                            )),
+                        )),
+
+                        OxcTSSignature::TSPropertySignature(sig) => {
+                            match &sig.key {
+                                OxcPropertyKey::StaticIdentifier(ident) => {
+                                    if let Some(t) = &sig.type_annotation {
+                                        fields.push((
+                                            Some(ident.name.to_string()),
+                                            self.type_annotation(
+                                                &t.type_annotation,
+                                            ),
+                                        ))
+                                    } else {
+                                        fields.push((
+                                            None,
+                                            TypeAnnotation::Disallowed((
+                                                ident.span,
+                                                "type annotation required",
+                                            )),
+                                        ))
+                                    }
+                                }
+
+                                _ => fields.push((
+                                    None,
+                                    TypeAnnotation::Disallowed((
+                                        sig.span,
+                                        "only static identifiers are allowed",
+                                    )),
+                                )),
+                            }
+                        }
+
+                        OxcTSSignature::TSCallSignatureDeclaration(sig) => {
+                            fields.push((
+                                None,
+                                TypeAnnotation::Disallowed((
+                                    sig.span,
+                                    "index signature",
+                                )),
+                            ))
+                        }
+
+                        OxcTSSignature::TSConstructSignatureDeclaration(
+                            sig,
+                        ) => fields.push((
+                            None,
+                            TypeAnnotation::Disallowed((
+                                sig.span,
+                                "index signature",
+                            )),
+                        )),
+
+                        OxcTSSignature::TSMethodSignature(sig) => {
+                            fields.push((
+                                None,
+                                TypeAnnotation::Disallowed((
+                                    sig.span,
+                                    "index signature",
+                                )),
+                            ))
+                        }
+                    }
+                }
+
+                self.insert_in_context(
+                    context,
+                    stmt.id.name.to_string(),
+                    Symbol::Type(NamedType::Interface { fields, generics }),
+                );
+            }
+
+            OxcStatement::TSEnumDeclaration(stmt) => {
+                /*
+                 * struct oxc_ast::ast::TSEnumDeclaration
+                 * - id: oxc_ast::ast::BindingIdentifier<'a>
+                 * - body: Box<'a, TSEnumBody<'a>>
+                 */
+
+                let mut variants = Vec::new();
+
+                /*
+                 * struct oxc_ast::ast::TSEnumBody
+                 * - members: Box<'a, oxc_ast::ast::TSEnumMember<'a>>
+                 */
+                for mem in &stmt.body.members {
+                    let id = mem.id.static_name().to_string();
+
+                    let init = if let Some(init) = &mem.initializer {
+                        match init {
+                            OxcExpression::NumericLiteral(lit) => {
+                                Some(EnumValue::Number(lit.value))
+                            }
+
+                            OxcExpression::StringLiteral(lit) => {
+                                Some(EnumValue::String(lit.value.to_string()))
+                            }
+
+                            _ => Some(EnumValue::Invalid),
+                        }
+                    } else {
+                        None
+                    };
+
+                    variants.push((id, init));
+                }
+
+                self.insert_in_context(
+                    context,
+                    stmt.id.name.to_string(),
+                    Symbol::Type(NamedType::Enum(variants)),
+                );
+            }
+
+            OxcStatement::TSExternalModuleDeclaration(_) => return,
+
+            OxcStatement::TSNamespaceDeclaration(_) => return,
+
+            OxcStatement::TSGlobalDeclaration(_) => return,
+
+            OxcStatement::TSImportEqualsDeclaration(_) => return,
+
+            // imports
+            OxcStatement::ImportDeclaration(_) => return,
+
+            OxcStatement::ExportAllDeclaration(_) => return,
+
+            OxcStatement::ExportDefaultDeclaration(_) => return,
+
+            OxcStatement::ExportDeclaration(_) => return,
+
+            OxcStatement::ExportNamedDeclaration(_) => return,
+
+            OxcStatement::ExportFromDeclaration(_) => return,
+
+            OxcStatement::TSExportAssignment(_) => return,
+
+            OxcStatement::TSNamespaceExportDeclaration(_) => return,
+        }
+    }
+
+    fn var_decl(&mut self, context: usize, decl: &OxcVariableDeclaration<'a>) {
+        for decl in &decl.declarations {
+            // if the current variable is NOT in the global context,
+            // it will never cross the semantic boundary, and hence needn't be analyzed
+            let r#type: Option<TypeAnnotation> = if context != 0 {
+                None
+            } else {
+                if let Some(annotation) = &decl.type_annotation {
+                    Some(self.type_annotation(&annotation.type_annotation))
+                } else {
+                    None
+                }
+            };
+
+            self.binding(
+                context,
+                Symbol::Variable {
+                    span: decl.span,
+                    type_annotation: r#type,
+                },
+                &decl.id,
+            );
+        }
+    }
+
+    fn type_annotation(
+        &mut self,
+        annotation: &OxcTSType<'a>,
+    ) -> TypeAnnotation {
+        match annotation {
+            OxcTSType::TSBooleanKeyword(_type) => {
+                TypeAnnotation::Boolean(_type.span)
+            }
+
+            OxcTSType::TSNumberKeyword(_type) => {
+                TypeAnnotation::Number(_type.span)
+            }
+
+            OxcTSType::TSStringKeyword(_type) => {
+                TypeAnnotation::String(_type.span)
+            }
+
+            OxcTSType::TSArrayType(_type) => {
+                /*
+                 * struct oxc_ast::ast::TSArrayType<'a>
+                 * element_type: oxc_ast::ast::TSType<'a>
+                 */
+
+                TypeAnnotation::Array((
+                    _type.span,
+                    Box::new(self.type_annotation(&_type.element_type)),
+                ))
+            }
+
+            OxcTSType::TSLiteralType(_type) => match &_type.literal {
+                OxcTSLiteral::BooleanLiteral(lit) => TypeAnnotation::Literal((
+                    _type.span,
+                    Literal::Boolean(lit.value),
+                )),
+
+                OxcTSLiteral::NumericLiteral(lit) => TypeAnnotation::Literal((
+                    _type.span,
+                    Literal::Number(lit.value),
+                )),
+
+                OxcTSLiteral::StringLiteral(lit) => TypeAnnotation::Literal((
+                    _type.span,
+                    Literal::String(lit.value.to_string()),
+                )),
+
+                OxcTSLiteral::BigIntLiteral(_type) => {
+                    TypeAnnotation::Disallowed((_type.span, "bigint literal"))
+                }
+
+                OxcTSLiteral::UnaryExpression(_type) => {
+                    TypeAnnotation::Disallowed((
+                        _type.span,
+                        "unary expression literal",
+                    ))
+                }
+
+                OxcTSLiteral::TemplateLiteral(_type) => {
+                    TypeAnnotation::Disallowed((_type.span, "template literal"))
                 }
             },
 
-            OxcExpression::ConditionalExpression(conditional) => {
-                self.analyze_expression(current_context, &conditional.test);
-                self.analyze_expression(
-                    current_context,
-                    &conditional.consequent,
-                );
-                self.analyze_expression(
-                    current_context,
-                    &conditional.alternate,
-                );
-            }
+            OxcTSType::TSNamedTupleMember(_type) => {
+                /*
+                 * struct oxc_ast::ast::TSNamedTupleMember<'a>
+                 * - label: oxc_ast::ast::IdentifierName<'a>
+                 * - element_type: oxc_ast::ast::TSTupleElement<'a>
+                 */
 
-            OxcExpression::FunctionExpression(func) => {
-                for param in &func.params.items {
-                    if let Some(init) = &param.initializer {
-                        self.analyze_expression(current_context, init);
+                match &_type.element_type {
+                    /*
+                     * enum oxc_ast::ast::TSTupleElement<'a>
+                     * : TSOptionalType(_) => Disallowed
+                     * : TSRestType(_) => Disallowed
+                     * : oxc_ast::ast::TSType<'a> variants
+                     */
+                    OxcTSTupleElement::TSOptionalType(_type) => {
+                        TypeAnnotation::Disallowed((_type.span, "optional"))
+                    }
+
+                    OxcTSTupleElement::TSRestType(_type) => {
+                        TypeAnnotation::Disallowed((_type.span, "rest"))
+                    }
+
+                    _ => {
+                        if let Some(t) = _type.element_type.as_ts_type() {
+                            TypeAnnotation::NamedTupleMember((
+                                _type.span,
+                                _type.label.to_string(),
+                                Box::new(self.type_annotation(t)),
+                            ))
+                        } else {
+                            unreachable!(
+                                "unhandled oxc_ast::ast::TSType {:?}",
+                                _type.element_type
+                            )
+                        }
                     }
                 }
-
-                if let Some(body) = &func.body {
-                    let fn_context = self.enter_context();
-
-                    self.analyze_use(
-                        fn_context,
-                        Body::Statements(&body.statements),
-                    );
-                }
             }
 
-            OxcExpression::LogicalExpression(logical) => {
-                self.analyze_expression(current_context, &logical.left);
-                self.analyze_expression(current_context, &logical.right);
-            }
+            OxcTSType::TSTupleType(_type) => {
+                /*
+                 * struct oxc_ast::ast::TSTupleType<'a>
+                 * - element_types: oxc_allocator::Vec<'a, oxc_ast::ast::TSTupleElement<'a>>
+                 */
 
-            OxcExpression::NewExpression(new) => {
-                self.analyze_expression(current_context, &new.callee);
+                let mut types = Vec::new();
 
-                for arg in &new.arguments {
-                    match arg {
-                        Argument::SpreadElement(elem) => {
-                            self.analyze_expression(
-                                current_context,
-                                &elem.argument,
-                            );
+                for t in &_type.element_types {
+                    match &t {
+                        /*
+                         * enum oxc_ast::ast::TSTupleElement<'a>
+                         * : TSOptionalType(_) => Disallowed
+                         * : TSRestType(_) => Disallowed
+                         * : oxc_ast::ast::TSType<'a> variants
+                         */
+                        OxcTSTupleElement::TSOptionalType(_type) => {
+                            types.push(TypeAnnotation::Disallowed((
+                                _type.span, "optional",
+                            )))
                         }
+
+                        OxcTSTupleElement::TSRestType(_type) => types.push(
+                            TypeAnnotation::Disallowed((_type.span, "rest")),
+                        ),
 
                         _ => {
-                            self.analyze_expression(
-                                current_context,
-                                arg.to_expression(),
-                            );
-                        }
-                    }
-                }
-            }
-
-            OxcExpression::ObjectExpression(obj) => {
-                for prop in &obj.properties {
-                    match prop {
-                        ObjectPropertyKind::ObjectProperty(obj_prop) => {
-                            match &obj_prop.key {
-                                PropertyKey::StaticIdentifier(_) => (),
-                                PropertyKey::PrivateIdentifier(_) => (),
-                                _ => self.analyze_expression(
-                                    current_context,
-                                    obj_prop.key.to_expression(),
-                                ),
+                            if let Some(t) = t.as_ts_type() {
+                                types.push(self.type_annotation(t))
+                            } else {
+                                unreachable!(
+                                    "unhandled oxc_ast::ast::TSType {t:?}",
+                                )
                             }
-
-                            self.analyze_expression(
-                                current_context,
-                                &obj_prop.value,
-                            );
                         }
+                    }
+                }
 
-                        ObjectPropertyKind::SpreadProperty(spread) => {
-                            self.analyze_expression(
-                                current_context,
-                                &spread.argument,
-                            );
+                TypeAnnotation::Tuple((_type.span, types))
+            }
+
+            OxcTSType::TSTypeReference(_type) => {
+                /*
+                 * struct oxc_ast::ast::TSTypeReference<'a>
+                 *
+                 * - type_name: oxc_ast::ast::TSTypeName<'a>
+                 */
+
+                match &_type.type_name {
+                    OxcTSTypeName::IdentifierReference(ident) => {
+                        if _type.type_arguments.is_some() {
+                            TypeAnnotation::Disallowed((_type.span, "generics"))
+                        } else {
+                            TypeAnnotation::TypeReference((
+                                _type.span,
+                                ident.name.to_string(),
+                            ))
                         }
+                    }
+
+                    OxcTSTypeName::QualifiedName(_) => {
+                        TypeAnnotation::Disallowed((
+                            _type.span,
+                            "qualified name",
+                        ))
+                    }
+
+                    OxcTSTypeName::ThisExpression(_) => {
+                        TypeAnnotation::Disallowed((
+                            _type.span,
+                            "this expression",
+                        ))
                     }
                 }
             }
 
-            OxcExpression::ParenthesizedExpression(paren) => {
-                self.analyze_expression(current_context, &paren.expression);
-            }
+            OxcTSType::TSUnionType(_type) => {
+                /*
+                 * struct oxc_ast::ast::TSUnionType<'a>
+                 * - types: oxc_allocator::Vec<'a, oxc_ast::ast::TSType<'a>>
+                 */
 
-            OxcExpression::SequenceExpression(seq) => {
-                for expr in &seq.expressions {
-                    self.analyze_expression(current_context, expr);
+                let mut types = Vec::new();
+
+                for t in &_type.types {
+                    types.push(self.type_annotation(t))
                 }
+
+                TypeAnnotation::Union((_type.span, types))
             }
 
-            OxcExpression::TaggedTemplateExpression(template) => {
-                self.analyze_expression(current_context, &template.tag);
+            OxcTSType::TSParenthesizedType(_type) => {
+                /*
+                 * struct oxc_ast::ast::TSParanthesizedType<'a>
+                 * - type_annotation: oxc_allocator::Vec<'a, oxc_ast::ast::TSType<'a>>
+                 */
 
-                for expr in &template.quasi.expressions {
-                    self.analyze_expression(current_context, expr);
-                }
+                self.type_annotation(&_type.type_annotation)
             }
 
-            OxcExpression::UnaryExpression(unary) => {
-                self.analyze_expression(current_context, &unary.argument);
+            OxcTSType::TSTypeLiteral(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "type literal"))
             }
 
-            OxcExpression::UpdateExpression(update) => {
-                self.analyze_assignment_target(
-                    current_context,
-                    update.argument.as_assignment_target(),
-                );
+            OxcTSType::TSAnyKeyword(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "any"))
             }
 
-            OxcExpression::YieldExpression(yield_expr) => {
-                if let Some(expr) = &yield_expr.argument {
-                    self.analyze_expression(current_context, expr)
-                }
+            OxcTSType::TSBigIntKeyword(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "bigint"))
             }
 
-            OxcExpression::TSAsExpression(as_expr) => {
-                self.analyze_expression(current_context, &as_expr.expression);
+            OxcTSType::TSIntrinsicKeyword(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "intrinsic"))
             }
 
-            OxcExpression::TSSatisfiesExpression(satisfies) => {
-                self.analyze_expression(current_context, &satisfies.expression);
+            OxcTSType::TSNeverKeyword(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "never"))
             }
 
-            OxcExpression::TSNonNullExpression(non_null) => {
-                self.analyze_expression(current_context, &non_null.expression);
+            OxcTSType::TSNullKeyword(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "null"))
             }
 
-            OxcExpression::TSTypeAssertion(assert) => {
-                self.analyze_expression(current_context, &assert.expression);
+            OxcTSType::TSObjectKeyword(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "object"))
             }
 
-            OxcExpression::TSInstantiationExpression(expr) => {
-                self.analyze_expression(current_context, &expr.expression);
+            OxcTSType::TSSymbolKeyword(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "symbol"))
             }
 
-            OxcExpression::ComputedMemberExpression(computed_member) => {
-                self.analyze_expression(
-                    current_context,
-                    &computed_member.object,
-                );
-
-                self.analyze_expression(
-                    current_context,
-                    &computed_member.expression,
-                );
+            OxcTSType::TSUndefinedKeyword(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "undefined"))
             }
 
-            OxcExpression::StaticMemberExpression(static_member) => {
-                self.analyze_expression(current_context, &static_member.object);
+            OxcTSType::TSUnknownKeyword(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "unknown"))
             }
 
-            _ => {
-                return;
+            OxcTSType::TSVoidKeyword(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "void"))
+            }
+
+            OxcTSType::TSConditionalType(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "conditional"))
+            }
+
+            OxcTSType::TSConstructorType(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "constructor"))
+            }
+
+            OxcTSType::TSFunctionType(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "function"))
+            }
+
+            OxcTSType::TSImportType(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "import"))
+            }
+
+            OxcTSType::TSIndexedAccessType(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "indexed access"))
+            }
+
+            OxcTSType::TSInferType(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "infer"))
+            }
+
+            OxcTSType::TSIntersectionType(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "intersection"))
+            }
+
+            OxcTSType::TSMappedType(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "mapped"))
+            }
+
+            OxcTSType::TSTemplateLiteralType(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "template literal"))
+            }
+
+            OxcTSType::TSThisType(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "this"))
+            }
+
+            OxcTSType::TSTypeOperatorType(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "type operator"))
+            }
+
+            OxcTSType::TSTypePredicate(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "type predicate"))
+            }
+
+            OxcTSType::TSTypeQuery(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "type query"))
+            }
+
+            OxcTSType::JSDocNullableType(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "JS Doc nullable"))
+            }
+
+            OxcTSType::JSDocNonNullableType(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "JS Doc non-nullable"))
+            }
+
+            OxcTSType::JSDocUnknownType(_type) => {
+                TypeAnnotation::Disallowed((_type.span, "JS Doc unknown"))
             }
         }
     }
 
-    fn analyze_use<'b>(&mut self, current_context: usize, body: Body<'b>) {
-        /*
-         * We are interested in resolving the use of global variables and global functions only,
-         * as we need to perform transformations on them during codegen.
-         *
-         * The gaol is to visit nodes of interest, being:
-         * - Identifier
-         * - Member Expression
-         * - VariableDeclarator (init)
-         * - AssignmentExpression (lhs=read, rhs=write)
-         * - UpdateExpression (read-write)
-         * - CallExpression (callee, arguments)
-         * - Expression containers (recursively visit children)
-         * - Control-flow expressions (test, init, update, discriminant etc.)
-         * - ReturnStatement (argument)
-         */
-
-        match body {
-            Body::Statement(stmt) => {
-                let enum_entry = format!("{:?}", stmt);
-                let idx = enum_entry.find("(");
-
-                if let Some(idx) = idx {
-                    println!("{} | ctxt: {current_context}", &enum_entry[..idx])
-                } else {
-                    println!("{enum_entry} | ctxt: {current_context}")
-                }
-
-                self.analyze_statement(current_context, stmt);
-            }
-
-            Body::Statements(stmts) => {
-                for stmt in stmts {
-                    let enum_entry = format!("{:?}", stmt);
-                    let idx = enum_entry.find("(");
-
-                    if let Some(idx) = idx {
-                        println!(
-                            "{} | ctxt: {current_context}",
-                            &enum_entry[..idx]
-                        )
-                    } else {
-                        println!("{enum_entry} | ctxt: {current_context}")
-                    }
-
-                    self.analyze_statement(current_context, stmt);
-                }
-            }
-
-            Body::Expression(expr) => {
-                let enum_entry = format!("{:?}", expr);
-                let idx = enum_entry.find("(");
-
-                if let Some(idx) = idx {
-                    println!("{} | ctxt: {current_context}", &enum_entry[..idx])
-                } else {
-                    println!("{enum_entry} | ctxt: {current_context}")
-                }
-
-                self.analyze_expression(current_context, expr);
-            }
-        }
-    }
-
-    pub fn analyze_program(
+    fn statements(
         &mut self,
-        oxc_allocator: &OxcAllocator,
-        source: &str,
+        context: usize,
+        stmts: &OxcVec<'a, OxcStatement<'a>>,
     ) {
-        let body = Self::parse(source, oxc_allocator);
+        for stmt in stmts {
+            self.statement(context, stmt)
+        }
+    }
 
-        println!("Build Context");
-        self.build_context(0, Body::Statements(&body));
-        println!("\n\nAnalyze Use");
-        let global = self.enter_context();
-        self.analyze_use(global, Body::Statements(&body));
-        println!();
+    pub fn view_span(&self, span: OxcSpan) -> &str {
+        &self.source[span.start as usize..span.end as usize]
+    }
+
+    pub fn is_global_symbol(&self, symbol: &str, context: usize) -> bool {
+        let ctxt = self.context_tree.get(context).unwrap();
+
+        if ctxt.symbols.contains_key(symbol) {
+            context == 0
+        } else {
+            if context == 0 {
+                false
+            } else {
+                self.is_global_symbol(symbol, ctxt.parent)
+            }
+        }
+    }
+
+    pub fn resolve(&mut self) -> Vec<SymbolUse> {
+        let mut global_uses = Vec::new();
+
+        for sym_use in &self.uses {
+            let sym = self.view_span(sym_use.span);
+
+            if self.is_global_symbol(sym, sym_use.context) {
+                global_uses.push(sym_use.clone());
+            }
+        }
+
+        global_uses
+    }
+
+    pub fn analyze(&mut self, oxc_allocator: &'a OxcAllocator) {
+        let body = Self::parse(self.source, oxc_allocator);
+
+        let global_context = self.create_context(0);
+
+        self.statements(global_context, &body);
+
+        let global_uses = self.resolve();
+
+        self.uses = global_uses;
+
+        println!("Global symbols");
+        for sym in &self.context_tree.get(0).unwrap().symbols {
+            println!("{sym:?}")
+        }
+
+        println!("Global uses");
+        for use_ in &self.uses {
+            println!("{} : {use_:?}", self.view_span(use_.span));
+        }
     }
 }

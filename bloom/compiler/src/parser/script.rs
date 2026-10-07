@@ -139,6 +139,10 @@ impl<'a> Parser<'a> {
 
                 pos += 1;
 
+                // skip all whtiespace
+                while [b' ', b' ', b'\t', b'\n'].contains(&self.src.get(pos)) {
+                    pos += 1
+                }
                 // try consume "function"
                 let start = pos;
 
