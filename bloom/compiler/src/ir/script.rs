@@ -1,8 +1,9 @@
-use std::{collections::HashMap, iter::Skip};
+use std::collections::HashMap;
 
-use crate::{common::Span, ir::template::Expression};
+use crate::ir::template::Expression;
 use oxc_allocator::{Allocator as OxcAllocator, Vec as OxcVec};
 
+use oxc_ast::ast::VariableDeclarationKind;
 #[rustfmt::skip]
 use oxc_ast::ast::{
     Argument as OxcArgument,
@@ -32,12 +33,10 @@ use oxc_ast::ast::{
     PropertyKey as OxcPropertyKey
 };
 use oxc_parser::Parser;
-use oxc_span::{SourceType, Span as OxcSpan};
+use oxc_span::{GetSpan, SourceType, Span as OxcSpan};
 
 #[derive(Debug)]
-pub struct SemanticAnalyzer<'a> {
-    source: &'a str,
-
+pub struct SemanticAnalyzer {
     pub context_tree: Vec<SymbolTable>,
     pub uses: Vec<SymbolUse>,
 }
@@ -98,6 +97,9 @@ pub enum Symbol {
     Variable {
         span: OxcSpan,
         type_annotation: Option<TypeAnnotation>,
+        is_let: bool,
+        is_state: bool,
+        init: Option<OxcSpan>,
     },
 
     Function {
@@ -137,13 +139,12 @@ pub struct SymbolTable {
     pub parent: usize,
 }
 
-impl<'a, 'b> SemanticAnalyzer<'b>
+impl<'a, 'b> SemanticAnalyzer
 where
     'a: 'b,
 {
-    pub fn new(source: &'a str) -> Self {
+    pub fn new() -> Self {
         Self {
-            source,
             context_tree: Vec::new(),
             uses: Vec::new(),
         }
@@ -1328,9 +1329,11 @@ where
                         let new_context = self.create_context(context);
                         self.binding(
                             new_context,
-                            Symbol::Variable {
+                            Symbol::Parameter {
                                 span: param.span,
                                 type_annotation: None,
+                                optional: false,
+                                order: 0,
                             },
                             &param.pattern,
                             uses,
@@ -1625,6 +1628,8 @@ where
         decl: &OxcVariableDeclaration<'a>,
         uses: &mut Vec<SymbolUse>,
     ) {
+        let is_let = matches!(decl.kind, VariableDeclarationKind::Let);
+
         for decl in &decl.declarations {
             // if the current variable is NOT in the global context,
             // it will never cross the semantic boundary, and hence needn't be analyzed
@@ -1638,11 +1643,21 @@ where
                 }
             };
 
+            let init = if let Some(init) = &decl.init {
+                self.expression(context, init, uses);
+                Some(init.span())
+            } else {
+                None
+            };
+
             self.binding(
                 context,
                 Symbol::Variable {
                     span: decl.span,
                     type_annotation: r#type,
+                    is_state: false,
+                    is_let,
+                    init,
                 },
                 &decl.id,
                 uses,
@@ -1971,7 +1986,7 @@ where
         }
     }
 
-    pub fn view_span(&self, source: &'a str, span: OxcSpan) -> &str {
+    pub fn view_span(&self, source: &'a str, span: OxcSpan) -> &'b str {
         &source[span.start as usize..span.end as usize]
     }
 
@@ -2044,11 +2059,25 @@ where
             // collect global and context uses
             for _use in uses {
                 let use_name =
-                    &self.view_span(&expr.source, _use.span).to_string();
+                    self.view_span(&expr.source, _use.span).to_string();
 
-                if expr.context_vars.contains(use_name) {
+                if expr.context_vars.contains(&use_name) {
                     context_uses.push(_use);
-                } else if self.is_global_symbol(use_name, _use.context) {
+                } else if self.is_global_symbol(&use_name, _use.context) {
+                    if let Some(Symbol::Variable {
+                        is_state, is_let, ..
+                    }) = self
+                        .context_tree
+                        .get_mut(0)
+                        .unwrap()
+                        .symbols
+                        .get_mut(&use_name)
+                    {
+                        // if a variable occurs in the template, it must be made into a state
+                        // but only if the variable itself is defined using `let` syntax
+                        *is_state = *is_let;
+                    }
+
                     global_uses.push(_use);
                 }
             }
