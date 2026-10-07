@@ -1,6 +1,6 @@
 use std::{collections::HashMap, iter::Skip};
 
-use crate::ir::template::Expression;
+use crate::{common::Span, ir::template::Expression};
 use oxc_allocator::{Allocator as OxcAllocator, Vec as OxcVec};
 
 #[rustfmt::skip]
@@ -36,9 +36,9 @@ use oxc_span::{SourceType, Span as OxcSpan};
 
 #[derive(Debug)]
 pub struct SemanticAnalyzer<'a> {
-    pub expressions: &'a Vec<Expression>,
-    pub context_tree: Vec<SymbolTable>,
     source: &'a str,
+
+    pub context_tree: Vec<SymbolTable>,
     pub uses: Vec<SymbolUse>,
 }
 
@@ -141,9 +141,8 @@ impl<'a, 'b> SemanticAnalyzer<'b>
 where
     'a: 'b,
 {
-    pub fn new(source: &'a str, expressions: &'b Vec<Expression>) -> Self {
+    pub fn new(source: &'a str) -> Self {
         Self {
-            expressions,
             source,
             context_tree: Vec::new(),
             uses: Vec::new(),
@@ -194,7 +193,12 @@ where
         context.symbols.insert(name, symbol);
     }
 
-    fn expression(&mut self, context: usize, expr: &OxcExpression<'a>) {
+    fn expression(
+        &mut self,
+        context: usize,
+        expr: &OxcExpression<'a>,
+        uses: &mut Vec<SymbolUse>,
+    ) {
         match expr {
             // these need not be visited
             OxcExpression::BooleanLiteral(_) => return,
@@ -224,7 +228,7 @@ where
                  */
 
                 for expr in &expr.expressions {
-                    self.expression(context, expr);
+                    self.expression(context, expr, uses);
                 }
             }
 
@@ -234,7 +238,7 @@ where
                  * - span: oxc_span::Span
                  */
 
-                self.uses.push(SymbolUse {
+                uses.push(SymbolUse {
                     span: expr.span,
                     context,
                 });
@@ -266,12 +270,12 @@ where
                          * - argument: Expression<'a>
                          */
                         OxcArrayExpressionElement::SpreadElement(spread) => {
-                            self.expression(context, &spread.argument);
+                            self.expression(context, &spread.argument, uses);
                         }
 
                         _ => {
                             if let Some(expr) = element.as_expression() {
-                                self.expression(context, expr);
+                                self.expression(context, expr, uses);
                             } else {
                                 unreachable!(
                                     "unhandled oxc_ast::ast::ArrayExpressionElement | {expr:?}"
@@ -292,7 +296,7 @@ where
                 // creates a new semantic context.
                 let new_context = self.create_context(context);
 
-                self.formal_parameters(new_context, &expr.params);
+                self.formal_parameters(new_context, &expr.params, uses);
 
                 /*
                  * enum oxc_ast::ast::ArrowFunctionBody
@@ -301,12 +305,12 @@ where
                  */
                 match &expr.body {
                     OxcArrowFunctionBody::FunctionBody(body) => {
-                        self.function_body(new_context, body);
+                        self.function_body(new_context, body, uses);
                     }
 
                     _ => {
                         if let Some(expr) = &expr.body.as_expression() {
-                            self.expression(new_context, expr);
+                            self.expression(new_context, expr, uses);
                         } else {
                             unreachable!(
                                 "unhandled oxc_ast::ast::ArrowFunctionBody | {expr:?}"
@@ -323,8 +327,8 @@ where
                  * - right: oxc_ast::ast::Expression<'a>
                  */
 
-                self.assignment_target(context, &expr.left);
-                self.expression(context, &expr.right);
+                self.assignment_target(context, &expr.left, uses);
+                self.expression(context, &expr.right, uses);
             }
 
             OxcExpression::AwaitExpression(expr) => {
@@ -333,7 +337,7 @@ where
                  * - argument: oxc_ast::ast::Expression<'a>
                  */
 
-                self.expression(context, &expr.argument);
+                self.expression(context, &expr.argument, uses);
             }
 
             OxcExpression::BinaryExpression(expr) => {
@@ -343,12 +347,17 @@ where
                  * - right: oxc_ast::ast::Expression<'a>
                  */
 
-                self.expression(context, &expr.left);
-                self.expression(context, &expr.right);
+                self.expression(context, &expr.left, uses);
+                self.expression(context, &expr.right, uses);
             }
 
             OxcExpression::CallExpression(expr) => {
-                self.callee_arguments(context, &expr.callee, &expr.arguments);
+                self.callee_arguments(
+                    context,
+                    &expr.callee,
+                    &expr.arguments,
+                    uses,
+                );
             }
 
             OxcExpression::ChainExpression(expr) => {
@@ -369,6 +378,7 @@ where
                             context,
                             &expr.callee,
                             &expr.arguments,
+                            uses,
                         );
                     }
 
@@ -378,14 +388,14 @@ where
                          * - expression: oxc_ast::ast::Expression<'a>
                          */
 
-                        self.expression(context, &expr.expression);
+                        self.expression(context, &expr.expression, uses);
                     }
 
                     _ => {
                         if let Some(expr) =
                             expr.expression.as_member_expression()
                         {
-                            self.member(context, expr);
+                            self.member(context, expr, uses);
                         } else {
                             unreachable!(
                                 "unhandled oxc_ast::ast::Element | {expr:?}"
@@ -403,9 +413,9 @@ where
                  * - alternate: oxc_ast::ast::Expression<'a>
                  */
 
-                self.expression(context, &expr.test);
-                self.expression(context, &expr.consequent);
-                self.expression(context, &expr.alternate);
+                self.expression(context, &expr.test, uses);
+                self.expression(context, &expr.consequent, uses);
+                self.expression(context, &expr.alternate, uses);
             }
 
             OxcExpression::FunctionExpression(expr) => {
@@ -419,10 +429,10 @@ where
                 // creates a new semantic context.
                 let new_context = self.create_context(context);
 
-                self.formal_parameters(new_context, &expr.params);
+                self.formal_parameters(new_context, &expr.params, uses);
 
                 if let Some(body) = &expr.body {
-                    let body = self.function_body(new_context, body);
+                    let body = self.function_body(new_context, body, uses);
 
                     // if the body itself doesn't exist, then it doesn't make a
                     // difference if the function's name is tracked
@@ -451,8 +461,8 @@ where
                  * - right: oxc_ast::ast::Expression<'a>
                  */
 
-                self.expression(context, &expr.left);
-                self.expression(context, &expr.right);
+                self.expression(context, &expr.left, uses);
+                self.expression(context, &expr.right, uses);
             }
 
             OxcExpression::NewExpression(expr) => {
@@ -462,7 +472,12 @@ where
                  * - arguments: oxc_allocator::Vec<'a, oxc_ast::ast::<'a>>
                  */
 
-                self.callee_arguments(context, &expr.callee, &expr.arguments);
+                self.callee_arguments(
+                    context,
+                    &expr.callee,
+                    &expr.arguments,
+                    uses,
+                );
             }
 
             OxcExpression::ObjectExpression(expr) => {
@@ -484,7 +499,7 @@ where
                          * - value: oxc_ast::ast::Expression<'a>
                          */
                         OxcObjectPropertyKind::ObjectProperty(obj) => {
-                            self.expression(context, &obj.value);
+                            self.expression(context, &obj.value, uses);
                         }
 
                         /*
@@ -492,7 +507,7 @@ where
                          * - argument: oxc_ast::ast::Expression<'a>
                          */
                         OxcObjectPropertyKind::SpreadProperty(spread) => {
-                            self.expression(context, &spread.argument);
+                            self.expression(context, &spread.argument, uses);
                         }
                     }
                 }
@@ -503,7 +518,7 @@ where
                  * struct oxc_ast::ast::ParenthesizedExpression<'a>
                  * - expression: oxc_ast::ast::Expression<'a>
                  */
-                self.expression(context, &expr.expression);
+                self.expression(context, &expr.expression, uses);
             }
 
             OxcExpression::SequenceExpression(expr) => {
@@ -513,7 +528,7 @@ where
                  */
 
                 for expr in &expr.expressions {
-                    self.expression(context, expr);
+                    self.expression(context, expr, uses);
                 }
             }
 
@@ -524,7 +539,7 @@ where
                  * - quasi: oxc_ast::ast::TemplateLiteral<'a>
                  */
 
-                self.expression(context, &expr.tag);
+                self.expression(context, &expr.tag, uses);
 
                 /*
                  * struct oxc_ast::ast::TemplateLiteral<'a>
@@ -534,7 +549,7 @@ where
                  */
 
                 for expr in &expr.quasi.expressions {
-                    self.expression(context, expr);
+                    self.expression(context, expr, uses);
                 }
             }
 
@@ -544,7 +559,7 @@ where
                  * - argument: oxc_ast::ast::Expression<'a>
                  */
 
-                self.expression(context, &expr.argument);
+                self.expression(context, &expr.argument, uses);
             }
 
             OxcExpression::UpdateExpression(expr) => {
@@ -553,7 +568,7 @@ where
                  * - argument: oxc_ast::ast::SimpleAssignmentTarget<'a>
                  */
 
-                self.simple_assignment_target(context, &expr.argument);
+                self.simple_assignment_target(context, &expr.argument, uses);
             }
 
             OxcExpression::YieldExpression(expr) => {
@@ -563,7 +578,7 @@ where
                  */
 
                 if let Some(expr) = &expr.argument {
-                    self.expression(context, expr);
+                    self.expression(context, expr, uses);
                 }
             }
 
@@ -573,7 +588,7 @@ where
                  * - right: oxc_ast::ast::Expression<'a>
                  */
 
-                self.expression(context, &expr.right);
+                self.expression(context, &expr.right, uses);
             }
 
             OxcExpression::TSAsExpression(expr) => {
@@ -582,7 +597,7 @@ where
                  * - expression: oxc_ast::ast::Expression<'a>
                  */
 
-                self.expression(context, &expr.expression);
+                self.expression(context, &expr.expression, uses);
             }
 
             OxcExpression::TSSatisfiesExpression(expr) => {
@@ -591,7 +606,7 @@ where
                  * - expression: oxc_ast::ast::Expression<'a>
                  */
 
-                self.expression(context, &expr.expression);
+                self.expression(context, &expr.expression, uses);
             }
 
             OxcExpression::TSTypeAssertion(expr) => {
@@ -600,7 +615,7 @@ where
                  * - expression: oxc_ast::ast::Expression<'a>
                  */
 
-                self.expression(context, &expr.expression);
+                self.expression(context, &expr.expression, uses);
             }
 
             OxcExpression::TSNonNullExpression(expr) => {
@@ -609,7 +624,7 @@ where
                  * - expression: oxc_ast::ast::Expression<'a>
                  */
 
-                self.expression(context, &expr.expression);
+                self.expression(context, &expr.expression, uses);
             }
 
             OxcExpression::TSInstantiationExpression(expr) => {
@@ -618,12 +633,12 @@ where
                  * - expression: oxc_ast::ast::Expression<'a>
                  */
 
-                self.expression(context, &expr.expression);
+                self.expression(context, &expr.expression, uses);
             }
 
             _ => {
                 if let Some(expr) = expr.as_member_expression() {
-                    self.member(context, expr);
+                    self.member(context, expr, uses);
                 } else {
                     unreachable!("unhandled oxc_ast::ast::Element | {expr:?}");
                 }
@@ -635,6 +650,7 @@ where
         &mut self,
         context: usize,
         target: &OxcAssignmentTarget<'a>,
+        uses: &mut Vec<SymbolUse>,
     ) {
         /*
          * enum oxc_ast::ast::AssignmentTarget<'a>
@@ -643,9 +659,9 @@ where
          */
 
         if let Some(target) = target.as_simple_assignment_target() {
-            self.simple_assignment_target(context, target);
+            self.simple_assignment_target(context, target, uses);
         } else if let Some(target) = target.as_assignment_target_pattern() {
-            self.assignment_target_pattern(context, &target);
+            self.assignment_target_pattern(context, &target, uses);
         } else {
             unreachable!(
                 "unhandled oxc_ast::ast::AssignmentTarget<'a> | {target:?}"
@@ -657,6 +673,7 @@ where
         &mut self,
         context: usize,
         target: &OxcAssignmentTargetMaybeDefault<'a>,
+        uses: &mut Vec<SymbolUse>,
     ) {
         /*
          * enum oxc_ast::ast::AssignmentTargetMaybeDefault<'a>
@@ -674,13 +691,13 @@ where
                  * - init: oxc_ast::ast::Expression<'a>
                  */
 
-                self.assignment_target(context, &target.binding);
-                self.expression(context, &target.init);
+                self.assignment_target(context, &target.binding, uses);
+                self.expression(context, &target.init, uses);
             }
 
             _ => {
                 if let Some(target) = target.as_assignment_target() {
-                    self.assignment_target(context, target);
+                    self.assignment_target(context, target, uses);
                 } else {
                     unreachable!(
                         "unhandled oxc_ast::ast::AssignmentTargetMaybeDefault<'a> | {target:?}"
@@ -694,6 +711,7 @@ where
         &mut self,
         context: usize,
         target: &OxcAssignmentTargetPattern<'a>,
+        uses: &mut Vec<SymbolUse>,
     ) {
         match target {
             OxcAssignmentTargetPattern::ArrayAssignmentTarget(target) => {
@@ -708,7 +726,7 @@ where
                         continue;
                     };
 
-                    self.assignment_target_maybe_default(context, elem);
+                    self.assignment_target_maybe_default(context, elem, uses);
                 }
             }
 
@@ -739,7 +757,7 @@ where
                             * - span: oxc_span::Span
                             */
 
-                            self.uses.push(
+                            uses.push(
                                 SymbolUse {
                                     span: ident.span,
                                     context
@@ -754,7 +772,7 @@ where
                              * - binding: oxc_ast::ast::AssignmentTargetMaybeDefault<'a>
                              */
 
-                            self.assignment_target_maybe_default(context, &property.binding);
+                            self.assignment_target_maybe_default(context, &property.binding, uses);
                         }
                     }
                 }
@@ -766,6 +784,7 @@ where
         &mut self,
         context: usize,
         target: &OxcSimpleAssignmentTarget<'a>,
+        uses: &mut Vec<SymbolUse>,
     ) {
         match target {
             OxcSimpleAssignmentTarget::AssignmentTargetIdentifier(target) => {
@@ -774,7 +793,7 @@ where
                  * - span: oxc_span::Span
                  */
 
-                self.uses.push(SymbolUse {
+                uses.push(SymbolUse {
                     span: target.span,
                     context,
                 });
@@ -786,7 +805,7 @@ where
                  * - expression: oxc_ast::ast::Expression<'a>
                  */
 
-                self.expression(context, &target.expression);
+                self.expression(context, &target.expression, uses);
             }
 
             OxcSimpleAssignmentTarget::TSSatisfiesExpression(target) => {
@@ -795,7 +814,7 @@ where
                  * - expression: oxc_ast::ast::Expression<'a>
                  */
 
-                self.expression(context, &target.expression);
+                self.expression(context, &target.expression, uses);
             }
 
             OxcSimpleAssignmentTarget::TSNonNullExpression(target) => {
@@ -804,7 +823,7 @@ where
                  * - expression: oxc_ast::ast::Expression<'a>
                  */
 
-                self.expression(context, &target.expression);
+                self.expression(context, &target.expression, uses);
             }
 
             OxcSimpleAssignmentTarget::TSTypeAssertion(target) => {
@@ -813,12 +832,12 @@ where
                  * - expression: oxc_ast::ast::Expression<'a>
                  */
 
-                self.expression(context, &target.expression);
+                self.expression(context, &target.expression, uses);
             }
 
             _ => {
                 if let Some(member) = target.as_member_expression() {
-                    self.member(context, member);
+                    self.member(context, member, uses);
                 } else {
                     unreachable!(
                         "unhandled oxc_ast::ast::SimpleAssignmentTarget<'a> | {target:?}"
@@ -832,6 +851,7 @@ where
         &mut self,
         context: usize,
         body: &OxcFunctionBody<'a>,
+        uses: &mut Vec<SymbolUse>,
     ) -> OxcSpan {
         // NOTE: we do NOT create a new context here. instead, we use the context passed in to the
         // parameter. this is done, so creation of the context and scanning the function body can
@@ -844,7 +864,7 @@ where
          */
 
         for stmt in &body.statements {
-            self.statement(context, stmt)
+            self.statement(context, stmt, uses);
         }
 
         body.span
@@ -854,6 +874,7 @@ where
         &mut self,
         context: usize,
         params: &OxcFormalParameters<'a>,
+        uses: &mut Vec<SymbolUse>,
     ) {
         /*
          * struct oxc_ast::ast::FormalParameters<'a>
@@ -883,10 +904,11 @@ where
                     type_annotation,
                 },
                 &param.pattern,
+                uses,
             );
 
             if let Some(init) = &param.initializer {
-                self.expression(context, init);
+                self.expression(context, init, uses);
             }
         }
 
@@ -904,6 +926,7 @@ where
                 context,
                 Symbol::ParameterRest { span: rest.span },
                 &rest.rest.argument,
+                uses,
             );
         }
     }
@@ -913,8 +936,9 @@ where
         context: usize,
         callee: &OxcExpression<'a>,
         args: &OxcVec<'a, OxcArgument<'a>>,
+        uses: &mut Vec<SymbolUse>,
     ) {
-        self.expression(context, callee);
+        self.expression(context, callee, uses);
 
         for arg in args {
             /*
@@ -929,12 +953,12 @@ where
                  * - argument: oxc_ast::ast::Expression<'a>
                  */
                 OxcArgument::SpreadElement(spread) => {
-                    self.expression(context, &spread.argument);
+                    self.expression(context, &spread.argument, uses);
                 }
 
                 _ => {
                     if let Some(expr) = arg.as_expression() {
-                        self.expression(context, expr);
+                        self.expression(context, expr, uses);
                     } else {
                         unreachable!(
                             "unhandled oxc_ast::ast::Argument<'a> | {arg:?}"
@@ -950,6 +974,7 @@ where
         context: usize,
         symbol: Symbol,
         pattern: &OxcBindingPattern<'a>,
+        uses: &mut Vec<SymbolUse>,
     ) {
         /*
          * enum oxc_ast::ast::BindingPattern<'a>
@@ -979,7 +1004,7 @@ where
                      *struct oxc_ast::ast::BindingProperty<'a>
                      *- value: oxc_ast::ast::BindingPattern<'a>
                      */
-                    self.binding(context, symbol.clone(), &prop.value)
+                    self.binding(context, symbol.clone(), &prop.value, uses)
                 }
             }
 
@@ -992,7 +1017,7 @@ where
 
                 for elem in &arr.elements {
                     if let Some(pattern) = elem {
-                        self.binding(context, symbol.clone(), pattern);
+                        self.binding(context, symbol.clone(), pattern, uses);
                     }
                 }
 
@@ -1001,7 +1026,7 @@ where
                      * struct oxc_ast::ast::BindingRestElement<'a>
                      * - argument: oxc_ast::ast::BindingPattern<'a>
                      */
-                    self.binding(context, symbol, &rest.argument);
+                    self.binding(context, symbol, &rest.argument, uses);
                 }
             }
 
@@ -1011,13 +1036,18 @@ where
                  * - left: oxc_ast::ast::BindingPattern<'a>
                  * - right: oxc_ast::ast::Expression<'a>
                  */
-                self.binding(context, symbol, &assign.left);
-                self.expression(context, &assign.right);
+                self.binding(context, symbol, &assign.left, uses);
+                self.expression(context, &assign.right, uses);
             }
         }
     }
 
-    fn member(&mut self, context: usize, expr: &OxcMemberExpression<'a>) {
+    fn member(
+        &mut self,
+        context: usize,
+        expr: &OxcMemberExpression<'a>,
+        uses: &mut Vec<SymbolUse>,
+    ) {
         /*
          * enum oxc_ast::ast::MemberExpression<'a>
          * : ComputedMemberExpression(Box<'a, ComputedMemberExpression<'a>>)
@@ -1032,8 +1062,8 @@ where
              * - expression: oxc_ast::ast::Expression<'a>
              */
             OxcMemberExpression::ComputedMemberExpression(expr) => {
-                self.expression(context, &expr.object);
-                self.expression(context, &expr.expression);
+                self.expression(context, &expr.object, uses);
+                self.expression(context, &expr.expression, uses);
             }
 
             /*
@@ -1041,7 +1071,7 @@ where
              * - object: oxc_ast::ast::Expression<'a>
              */
             OxcMemberExpression::StaticMemberExpression(expr) => {
-                self.expression(context, &expr.object);
+                self.expression(context, &expr.object, uses);
             }
 
             /*
@@ -1049,12 +1079,17 @@ where
              * - object: oxc_ast::ast::Expression<'a>
              */
             OxcMemberExpression::PrivateFieldExpression(expr) => {
-                self.expression(context, &expr.object);
+                self.expression(context, &expr.object, uses);
             }
         }
     }
 
-    fn statement(&mut self, context: usize, stmt: &OxcStatement<'a>) {
+    fn statement(
+        &mut self,
+        context: usize,
+        stmt: &OxcStatement<'a>,
+        uses: &mut Vec<SymbolUse>,
+    ) {
         match stmt {
             // these need not be visited
             OxcStatement::BreakStatement(_) => return,
@@ -1071,7 +1106,7 @@ where
                  */
 
                 let new_context = self.create_context(context);
-                self.statements(new_context, &stmt.body);
+                self.statements(new_context, &stmt.body, uses);
             }
 
             OxcStatement::DoWhileStatement(stmt) => {
@@ -1080,8 +1115,8 @@ where
                  * - body: oxc_ast::ast::Statement<'a>
                  */
 
-                self.expression(context, &stmt.test);
-                self.statement(context, &stmt.body);
+                self.expression(context, &stmt.test, uses);
+                self.statement(context, &stmt.body, uses);
             }
 
             OxcStatement::ExpressionStatement(stmt) => {
@@ -1090,7 +1125,7 @@ where
                  * - expression: oxc_ast::ast::Expression<'a>
                  */
 
-                self.expression(context, &stmt.expression);
+                self.expression(context, &stmt.expression, uses);
             }
 
             OxcStatement::ForInStatement(stmt) => {
@@ -1110,12 +1145,12 @@ where
                      * : oxc_ast::ast::AssignmentTarget<'a> variants
                      */
                     OxcForStatementLeft::VariableDeclaration(decl) => {
-                        self.var_decl(new_context, decl);
+                        self.var_decl(new_context, decl, uses);
                     }
 
                     _ => {
                         if let Some(stmt) = stmt.left.as_assignment_target() {
-                            self.assignment_target(context, stmt);
+                            self.assignment_target(context, stmt, uses);
                         } else {
                             unreachable!(
                                 "unhandled oxc_ast::ast::ForStatementLeft<'a> | {:?}",
@@ -1125,8 +1160,8 @@ where
                     }
                 }
 
-                self.expression(context, &stmt.right);
-                self.statement(new_context, &stmt.body);
+                self.expression(context, &stmt.right, uses);
+                self.statement(new_context, &stmt.body, uses);
             }
 
             OxcStatement::ForOfStatement(stmt) => {
@@ -1146,12 +1181,12 @@ where
                      * : oxc_ast::ast::AssignmentTarget<'a> variants
                      */
                     OxcForStatementLeft::VariableDeclaration(decl) => {
-                        self.var_decl(new_context, decl);
+                        self.var_decl(new_context, decl, uses);
                     }
 
                     _ => {
                         if let Some(stmt) = stmt.left.as_assignment_target() {
-                            self.assignment_target(context, stmt);
+                            self.assignment_target(context, stmt, uses);
                         } else {
                             unreachable!(
                                 "unhandled oxc_ast::ast::ForStatementLeft<'a> | {:?}",
@@ -1161,8 +1196,8 @@ where
                     }
                 }
 
-                self.expression(context, &stmt.right);
-                self.statement(new_context, &stmt.body);
+                self.expression(context, &stmt.right, uses);
+                self.statement(new_context, &stmt.body, uses);
             }
 
             OxcStatement::ForStatement(stmt) => {
@@ -1184,12 +1219,12 @@ where
                          * : oxc_ast::ast::Expression<'a> variants
                          */
                         OxcForStatementInit::VariableDeclaration(decl) => {
-                            self.var_decl(new_context, decl);
+                            self.var_decl(new_context, decl, uses);
                         }
 
                         _ => {
                             if let Some(expr) = init.as_expression() {
-                                self.expression(context, expr);
+                                self.expression(context, expr, uses);
                             } else {
                                 unreachable!(
                                     "unhandled oxc_ast::ast::ForStatementInit<'a> | {init:?}"
@@ -1207,11 +1242,11 @@ where
                  * - consequent: oxc_ast::ast::Statement<'a>
                  * - alternate: Option<oxc_ast::ast::Statement<'a>>
                  */
-                self.expression(context, &stmt.test);
-                self.statement(context, &stmt.consequent);
+                self.expression(context, &stmt.test, uses);
+                self.statement(context, &stmt.consequent, uses);
 
                 if let Some(alternate) = &stmt.alternate {
-                    self.statement(context, alternate);
+                    self.statement(context, alternate, uses);
                 }
             }
 
@@ -1220,7 +1255,7 @@ where
                  * struct oxc_ast::ast::LabeledStatement<'a>
                  * - body: Option<oxc_ast::ast::Statement<'a>>
                  */
-                self.statement(context, &stmt.body);
+                self.statement(context, &stmt.body, uses);
             }
 
             OxcStatement::ReturnStatement(stmt) => {
@@ -1230,7 +1265,7 @@ where
                  */
 
                 if let Some(arg) = &stmt.argument {
-                    self.expression(context, arg);
+                    self.expression(context, arg, uses);
                 }
             }
 
@@ -1243,7 +1278,7 @@ where
 
                 let new_context = self.create_context(context);
 
-                self.expression(context, &stmt.discriminant);
+                self.expression(context, &stmt.discriminant, uses);
 
                 for case in &stmt.cases {
                     /*
@@ -1252,10 +1287,10 @@ where
                      */
 
                     if let Some(test) = &case.test {
-                        self.expression(context, test);
+                        self.expression(context, test, uses);
                     }
 
-                    self.statements(new_context, &case.consequent);
+                    self.statements(new_context, &case.consequent, uses);
                 }
             }
 
@@ -1265,7 +1300,7 @@ where
                  * - argument: oxc_ast::ast::Expression<'a>
                  */
 
-                self.expression(context, &stmt.argument);
+                self.expression(context, &stmt.argument, uses);
             }
 
             OxcStatement::TryStatement(stmt) => {
@@ -1277,7 +1312,7 @@ where
                  */
 
                 let try_context = self.create_context(context);
-                self.statements(try_context, &stmt.block.body);
+                self.statements(try_context, &stmt.block.body, uses);
 
                 if let Some(catch) = &stmt.handler {
                     /*
@@ -1298,6 +1333,7 @@ where
                                 type_annotation: None,
                             },
                             &param.pattern,
+                            uses,
                         );
 
                         new_context
@@ -1305,12 +1341,12 @@ where
                         context
                     };
 
-                    self.statements(catch_context, &catch.body.body);
+                    self.statements(catch_context, &catch.body.body, uses);
                 }
 
                 if let Some(fin) = &stmt.finalizer {
                     let fin_context = self.create_context(context);
-                    self.statements(fin_context, &fin.body);
+                    self.statements(fin_context, &fin.body, uses);
                 }
             }
 
@@ -1320,8 +1356,8 @@ where
                  * - test: Option<oxc_ast::ast::Expression<'a>>
                  * - body: Option<oxc_ast::ast::Statement<'a>>
                  */
-                self.expression(context, &stmt.test);
-                self.statement(context, &stmt.body);
+                self.expression(context, &stmt.test, uses);
+                self.statement(context, &stmt.body, uses);
             }
 
             OxcStatement::WithStatement(stmt) => {
@@ -1331,13 +1367,13 @@ where
                  * - body: Option<oxc_ast::ast::Statement<'a>>
                  */
 
-                self.expression(context, &stmt.object);
-                self.statement(context, &stmt.body);
+                self.expression(context, &stmt.object, uses);
+                self.statement(context, &stmt.body, uses);
             }
 
             // declarations
             OxcStatement::VariableDeclaration(stmt) => {
-                self.var_decl(context, &stmt);
+                self.var_decl(context, &stmt, uses);
             }
 
             OxcStatement::FunctionDeclaration(stmt) => {
@@ -1352,10 +1388,10 @@ where
 
                 let new_context = self.create_context(context);
 
-                self.formal_parameters(new_context, &stmt.params);
+                self.formal_parameters(new_context, &stmt.params, uses);
 
                 let body = if let Some(body) = &stmt.body {
-                    Some(self.function_body(new_context, body))
+                    Some(self.function_body(new_context, body, uses))
                 } else {
                     None
                 };
@@ -1583,7 +1619,12 @@ where
         }
     }
 
-    fn var_decl(&mut self, context: usize, decl: &OxcVariableDeclaration<'a>) {
+    fn var_decl(
+        &mut self,
+        context: usize,
+        decl: &OxcVariableDeclaration<'a>,
+        uses: &mut Vec<SymbolUse>,
+    ) {
         for decl in &decl.declarations {
             // if the current variable is NOT in the global context,
             // it will never cross the semantic boundary, and hence needn't be analyzed
@@ -1604,6 +1645,7 @@ where
                     type_annotation: r#type,
                 },
                 &decl.id,
+                uses,
             );
         }
     }
@@ -1922,14 +1964,15 @@ where
         &mut self,
         context: usize,
         stmts: &OxcVec<'a, OxcStatement<'a>>,
+        uses: &mut Vec<SymbolUse>,
     ) {
         for stmt in stmts {
-            self.statement(context, stmt)
+            self.statement(context, stmt, uses)
         }
     }
 
-    pub fn view_span(&self, span: OxcSpan) -> &str {
-        &self.source[span.start as usize..span.end as usize]
+    pub fn view_span(&self, source: &'a str, span: OxcSpan) -> &str {
+        &source[span.start as usize..span.end as usize]
     }
 
     pub fn is_global_symbol(&self, symbol: &str, context: usize) -> bool {
@@ -1945,40 +1988,73 @@ where
             }
         }
     }
-
-    pub fn resolve(&mut self) -> Vec<SymbolUse> {
-        let mut global_uses = Vec::new();
-
-        for sym_use in &self.uses {
-            let sym = self.view_span(sym_use.span);
-
-            if self.is_global_symbol(sym, sym_use.context) {
-                global_uses.push(sym_use.clone());
-            }
-        }
-
-        global_uses
-    }
-
-    pub fn analyze(&mut self, oxc_allocator: &'a OxcAllocator) {
-        let body = Self::parse(self.source, oxc_allocator);
+    pub fn analyze_script(
+        &mut self,
+        script: &'a str,
+        oxc_allocator: &'a OxcAllocator,
+    ) {
+        let body = Self::parse(script, oxc_allocator);
 
         let global_context = self.create_context(0);
 
-        self.statements(global_context, &body);
+        let mut uses = Vec::new();
 
-        let global_uses = self.resolve();
+        self.statements(global_context, &body, &mut uses);
+
+        // collect global uses
+        let global_uses = uses
+            .iter()
+            .filter(|u| {
+                self.is_global_symbol(
+                    self.view_span(&script, u.span),
+                    u.context,
+                )
+            })
+            .cloned()
+            .collect();
 
         self.uses = global_uses;
+    }
 
-        println!("Global symbols");
-        for sym in &self.context_tree.get(0).unwrap().symbols {
-            println!("{sym:?}")
-        }
+    pub fn analyze(
+        &mut self,
+        oxc_allocator: &'a OxcAllocator,
+        script: &'a str,
+        expressions: &'a mut Vec<Expression>,
+    ) {
+        self.analyze_script(script, oxc_allocator);
+        self.analyze_expressions(expressions, oxc_allocator);
+    }
 
-        println!("Global uses");
-        for use_ in &self.uses {
-            println!("{} : {use_:?}", self.view_span(use_.span));
+    pub fn analyze_expressions(
+        &mut self,
+        expressions: &'a mut Vec<Expression>,
+        oxc_allocator: &'a OxcAllocator,
+    ) {
+        for expr in expressions {
+            let body = Self::parse(&expr.source, oxc_allocator);
+
+            let mut uses = Vec::new();
+
+            self.statements(0, &body, &mut uses);
+
+            let mut context_uses = Vec::new();
+            let mut global_uses = Vec::new();
+
+            // collect global and context uses
+            for _use in uses {
+                let use_name =
+                    &self.view_span(&expr.source, _use.span).to_string();
+
+                if expr.context_vars.contains(use_name) {
+                    context_uses.push(_use);
+                } else if self.is_global_symbol(use_name, _use.context) {
+                    global_uses.push(_use);
+                }
+            }
+
+            expr.global_uses = global_uses;
+            expr.context_uses = context_uses;
         }
     }
 }

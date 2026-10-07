@@ -134,6 +134,10 @@ impl Source {
         std::str::from_utf8(&self.src[start..end]).unwrap()
     }
 
+    pub fn view_full(&self) -> &str {
+        self.view(0, self.src.len())
+    }
+
     pub fn view_span<T: AsRef<Span>>(&self, span: T) -> &str {
         let span = span.as_ref();
         self.view(span.start, span.end)

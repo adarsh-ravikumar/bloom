@@ -1,303 +1,258 @@
 use crate::{
-    common::Source,
+    common::{Source, Span},
+    ir::script::SymbolUse,
     parser::{
-        Control, EachControl, Fragment, FragmentNode, IfControl, Root, Widget,
+        AttributeValue, Control, EachControl, Fragment, FragmentNode,
+        IfControl, Part, Parts, Root, Widget,
     },
 };
 
 #[derive(Debug, Clone)]
 pub struct TemplateIr<'a> {
-    pub nodes: Vec<IrNode>,
+    pub ir_nodes: Vec<IrNode>,
     pub expressions: Vec<Expression>,
 
     ast: &'a Root,
     src: &'a Source,
-    next_id: usize,
+    next_node_id: usize,
+
+    context_vars: Vec<String>,
 }
 
-type WidgetId = usize;
+type NodeId = usize;
+type ExpressionId = usize;
+
+#[rustfmt::skip]
 #[derive(Debug, Clone)]
 pub enum IrNode {
-    CreateWidget(CreateWidget),
-    CreateParts(CreateParts),
-    CreateIfBlock(CreateIfBlock),
-    CreateEachBlock(CreateEachBlock),
-    EndIfBlock,
-    EndIfCase,
-    EndEachBlock,
-    AddChild(AddChild),
-}
+    StartParts { id: NodeId },
+    Text { value: String },
+    Expression { span: Span, id: ExpressionId },
+    EndParts { id: NodeId, parent: NodeId },
 
-#[derive(Debug, Clone)]
-pub struct CreateIfBlock {
-    pub id: WidgetId,
-    pub cases: Vec<Expression>,
-}
+    StartWidget { name: String, id: NodeId },
+    EndWidget { id: NodeId, parent: NodeId },
 
-#[derive(Debug, Clone)]
-pub struct CreateEachBlock {
-    pub context: String,
-    pub expression: Expression,
-    pub id: WidgetId,
-}
+    StartAttributeList,
+    AttributeName { name: String, span: Span },
+    AttributeTrue,
+    EndAttributeList,
 
-#[derive(Debug, Clone)]
-pub struct CreateWidget {
-    pub id: WidgetId,
-    pub name: String,
-}
+    StartIfBlock { test: Option<ExpressionId>, id: NodeId},
+    EndIfBlock { id: NodeId, parent: NodeId },
 
-#[derive(Debug, Clone)]
-pub struct CreateParts {
-    pub id: WidgetId,
-    pub parts: Vec<Part>,
-}
+    StartCaseBlock { test: Option<ExpressionId>, id: NodeId},
+    EndCaseBlock { id: NodeId, parent: NodeId },
 
-#[derive(Debug, Clone)]
-pub enum Part {
-    Text(Text),
-    Expression(Expression),
-}
-
-#[derive(Debug, Clone)]
-pub struct Text {
-    pub text: String,
+    StartEachBlock { iterable: Option<ExpressionId>, id: NodeId},
+    EndEachBlock { id: NodeId, parent: NodeId },
 }
 
 #[derive(Debug, Clone)]
 pub struct Expression {
-    pub expression: String,
-    pub context: Vec<String>,
-    pub symbols: Vec<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct AddChild {
-    pub parent_id: WidgetId,
-    pub child_id: WidgetId,
+    pub source: String,
+    pub context_vars: Vec<String>,
+    pub global_uses: Vec<SymbolUse>,
+    pub context_uses: Vec<SymbolUse>,
 }
 
 impl<'a> TemplateIr<'a> {
-    pub fn new(src: &'a Source, ast: &'a Root) -> Self {
+    pub fn new(ast: &'a Root, src: &'a Source) -> Self {
         Self {
-            src,
-            ast,
+            next_node_id: 1, // 0 represents global scope
+            ir_nodes: Vec::new(),
             expressions: Vec::new(),
-            nodes: Vec::new(),
-            next_id: 0,
+            ast,
+            src,
+            context_vars: Vec::new(),
         }
     }
 
-    fn get_id(&mut self) -> WidgetId {
-        self.next_id += 1;
-        assert!(self.next_id != 0); // id 0 is the root
-        self.next_id
+    fn get_node_id(&mut self) -> NodeId {
+        let id = self.next_node_id;
+        self.next_node_id += 1;
+        id
     }
 
-    fn emit(&mut self, node: IrNode) {
-        self.nodes.push(node);
+    fn emit_node(&mut self, node: IrNode) {
+        self.ir_nodes.push(node)
     }
 
-    fn visit_widget(
-        &mut self,
-        widget: &Widget,
-        context: Vec<String>,
-        parent_id: usize,
-    ) {
-        let id = self.get_id();
-        let name = self.src.view_span(widget.name).to_string();
+    fn visit_text(&mut self, span: Span) {
+        self.emit_node(IrNode::Text {
+            value: self.src.view_span(span).to_string(),
+        });
+    }
 
-        self.emit(IrNode::CreateWidget(CreateWidget { id, name }));
-        self.emit(IrNode::AddChild(AddChild {
-            parent_id,
-            child_id: id,
-        }));
+    fn visit_expression(&mut self, span: Span) -> ExpressionId {
+        let id = self.expressions.len();
+
+        self.expressions.push(Expression {
+            source: self.src.view_span(span).to_string(),
+            global_uses: Vec::new(),
+            context_uses: Vec::new(),
+            context_vars: self.context_vars.clone(),
+        });
+
+        self.emit_node(IrNode::Expression { span, id });
+
+        id
+    }
+
+    fn visit_parts(&mut self, parts: &Parts, parent: NodeId) {
+        let id = self.get_node_id();
+
+        self.emit_node(IrNode::StartParts { id });
+
+        for part in parts {
+            match part {
+                Part::Text(span) => self.visit_text(*span),
+                Part::Expression(span) => {
+                    self.visit_expression(*span);
+                }
+            }
+        }
+
+        self.emit_node(IrNode::EndParts { id, parent });
+    }
+
+    fn visit_widget(&mut self, widget: &Widget, parent: NodeId) {
+        let id = self.get_node_id();
+
+        self.emit_node(IrNode::StartWidget {
+            name: self.src.view_span(widget.name).to_string(),
+            id,
+        });
+
+        self.emit_node(IrNode::StartAttributeList);
+
+        for attrib in &widget.attributes {
+            self.emit_node(IrNode::AttributeName {
+                name: self.src.view_span(attrib.name).to_string(),
+                span: attrib.name,
+            });
+
+            match &attrib.value {
+                AttributeValue::Expression(span) => {
+                    self.visit_expression(*span);
+                }
+
+                AttributeValue::Parts(parts) => {
+                    // the parts generated within an attribute will have a value of 0
+                    // the consumer of the IR is expected to handle the attribute's value
+                    // as a special case, in terms of association
+                    self.visit_parts(parts, 0)
+                }
+
+                AttributeValue::True => {
+                    self.emit_node(IrNode::AttributeTrue);
+                }
+            }
+        }
+
+        self.emit_node(IrNode::EndAttributeList);
 
         if let Some(frag) = &widget.fragment {
-            self.visit_fragment(frag, context.clone(), id);
+            self.visit_fragment(frag, id);
+        }
+
+        self.emit_node(IrNode::EndWidget { id, parent });
+    }
+
+    fn visit_control(&mut self, control: &Control, parent: NodeId) {
+        match control {
+            Control::If(if_ctrl) => self.visit_if(if_ctrl, parent),
+            Control::Each(each_ctrl) => self.visit_each(each_ctrl, parent),
         }
     }
 
-    fn visit_parts(
-        &mut self,
-        parts: &mut Vec<&FragmentNode>,
-        context: Vec<String>,
-        parent_id: usize,
-    ) {
-        let mut parts_ir = Vec::new();
+    fn visit_if(&mut self, if_ctrl: &IfControl, parent: NodeId) {
+        let if_id = self.get_node_id();
 
-        for part in parts.iter() {
-            match part {
-                FragmentNode::Text(text) => parts_ir.push(Part::Text(Text {
-                    text: self.src.view_span(text).to_string(),
-                })),
+        let test = Some(self.visit_expression(if_ctrl.condition));
 
-                FragmentNode::Expression(expression) => {
-                    let expr = Expression {
-                        expression: self.src.view_span(expression).to_string(),
-                        symbols: vec![],
-                        context: context.clone(), // expensive operation, but affordable
-                    };
+        self.emit_node(IrNode::StartIfBlock { test, id: if_id });
 
-                    parts_ir.push(Part::Expression(expr.clone()));
-                    self.expressions.push(expr.clone());
-                }
+        self.visit_fragment(&if_ctrl.body, if_id);
 
-                _ => panic!("unexpected part: {:?}", part),
-            }
+        for case in &if_ctrl.elifs {
+            let test = Some(self.visit_expression(if_ctrl.condition));
+
+            let case_id = self.get_node_id();
+
+            self.emit_node(IrNode::StartCaseBlock { test, id: case_id });
+
+            self.visit_fragment(&case.body, case_id);
+
+            self.emit_node(IrNode::EndCaseBlock {
+                id: case_id,
+                parent: if_id,
+            });
         }
 
-        let id = self.get_id();
+        if let Some(else_ctrl) = &if_ctrl.else_body {
+            let else_id = self.get_node_id();
 
-        self.nodes.push(IrNode::CreateParts(CreateParts {
-            id,
-            parts: parts_ir,
-        }));
+            self.emit_node(IrNode::StartCaseBlock {
+                test: None,
+                id: else_id,
+            });
 
-        self.nodes.push(IrNode::AddChild(AddChild {
-            parent_id,
-            child_id: id,
-        }));
+            self.visit_fragment(else_ctrl, else_id);
 
-        parts.clear();
+            self.emit_node(IrNode::EndCaseBlock {
+                id: else_id,
+                parent: if_id,
+            });
+        }
+
+        self.emit_node(IrNode::EndIfBlock { id: if_id, parent });
     }
 
-    fn visit_if_ctrl(&mut self, context: Vec<String>, if_ctrl: &IfControl) {
-        let mut conditions = Vec::new();
+    fn visit_each(&mut self, each_ctrl: &EachControl, parent: NodeId) {
+        let each_id = self.get_node_id();
 
-        if if_ctrl.body.nodes.len() > 0 {
-            let expr = Expression {
-                expression: self.src.view_span(if_ctrl.condition).to_string(),
-                symbols: vec![],
-                context: context.clone(), // expensive operation, but affordable
-            };
+        let iterable = Some(self.visit_expression(each_ctrl.expression));
 
-            conditions.push(expr.clone());
-            self.expressions.push(expr.clone());
-        }
+        let context = self.src.view_span(each_ctrl.context).to_string();
 
-        for elif in &if_ctrl.elifs {
-            if elif.body.nodes.len() == 0 {
-                continue;
-            }
+        self.emit_node(IrNode::StartEachBlock {
+            iterable,
+            id: each_id,
+        });
 
-            let expr = Expression {
-                expression: self.src.view_span(elif.condition).to_string(),
-                symbols: vec![],
-                context: context.clone(), // expensive operation, but affordable
-            };
+        self.context_vars.push(context);
 
-            conditions.push(expr.clone());
-            self.expressions.push(expr.clone());
-        }
+        self.visit_fragment(&each_ctrl.body, each_id);
 
-        let if_id = self.get_id();
+        self.context_vars.pop();
 
-        self.emit(IrNode::CreateIfBlock(CreateIfBlock {
-            id: if_id,
-            cases: conditions,
-        }));
-
-        self.visit_fragment(&if_ctrl.body, context.clone(), if_id);
-
-        self.emit(IrNode::EndIfCase);
-
-        for elif in &if_ctrl.elifs {
-            if elif.body.nodes.len() == 0 {
-                continue;
-            }
-
-            self.visit_fragment(&elif.body, context.clone(), if_id);
-            self.emit(IrNode::EndIfCase);
-        }
-
-        if let Some(body) = &if_ctrl.else_body {
-            self.visit_fragment(body, context.clone(), if_id);
-            self.emit(IrNode::EndIfCase);
-        }
-
-        self.emit(IrNode::EndIfBlock);
+        self.emit_node(IrNode::EndEachBlock {
+            id: each_id,
+            parent,
+        });
     }
 
-    fn visit_each_ctrl(
-        &mut self,
-        context: Vec<String>,
-        each_ctrl: &EachControl,
-    ) {
-        let each_context = self.src.view_span(&each_ctrl.context).to_string();
-
-        let mut context = context.clone();
-
-        let expression = Expression {
-            expression: self.src.view_span(each_ctrl.expression).to_string(),
-            symbols: vec![],
-            context: context.clone(), // expensive operation, but affordable
-        };
-
-        self.expressions.push(expression.clone());
-
-        context.push(each_context.clone());
-
-        let id = self.get_id();
-        self.emit(IrNode::CreateEachBlock(CreateEachBlock {
-            context: each_context,
-            expression,
-            id,
-        }));
-
-        self.visit_fragment(&each_ctrl.body, context.clone(), id);
-
-        self.emit(IrNode::EndEachBlock);
-    }
-
-    fn visit_fragment(
-        &mut self,
-        fragment: &Fragment,
-        context: Vec<String>,
-        id: usize,
-    ) {
-        let mut parts = Vec::new();
-
-        for node in &fragment.nodes {
+    fn visit_fragment(&mut self, frag: &Fragment, parent: NodeId) {
+        for node in &frag.nodes {
             match node {
-                FragmentNode::Widget(elem) => {
-                    if parts.len() > 0 {
-                        self.visit_parts(&mut parts, context.clone(), id);
-                    }
-
-                    self.visit_widget(elem, context.clone(), id)
+                FragmentNode::Text(span) => self.visit_text(*span),
+                FragmentNode::Expression(span) => {
+                    self.visit_expression(*span);
                 }
-
-                FragmentNode::Text(_) | FragmentNode::Expression(_) => {
-                    parts.push(node);
+                FragmentNode::Widget(widget) => {
+                    self.visit_widget(widget, parent)
                 }
-
                 FragmentNode::Control(control) => {
-                    if parts.len() > 0 {
-                        self.visit_parts(&mut parts, context.clone(), id);
-                    }
-
-                    match &control {
-                        Control::If(if_ctrl) => {
-                            self.visit_if_ctrl(context.clone(), if_ctrl);
-                        }
-
-                        Control::Each(each_ctrl) => {
-                            self.visit_each_ctrl(context.clone(), each_ctrl);
-                        }
-                    }
+                    self.visit_control(control, parent)
                 }
             }
-        }
-
-        if parts.len() > 0 {
-            self.visit_parts(&mut parts, context.clone(), id);
         }
     }
 
     pub fn generate_ir(&mut self) {
         if let Some(frag) = &self.ast.fragment {
-            self.visit_fragment(frag, vec![], 0);
+            self.visit_fragment(frag, 0)
         }
     }
 }

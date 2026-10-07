@@ -1,685 +1,590 @@
 <script>
-// ============================================================
-// GLOBAL TYPE ALIASES
-// ============================================================
+    type UserId = string;
+    type UserName = string;
+    type Score = number;
+    type Enabled = boolean;
+    type UserTags = string[];
+    type ScorePair = [Score, Score];
+    type StatusValue = "active" | "pending" | "disabled";
 
-type UserId = number;
-
-type UserName = string;
-
-type Enabled = boolean;
-
-type Score = number | string;
-
-type Pair = [number, string];
-
-type UserTags = string[];
-
-type StatusValue = "active" | "inactive" | "banned";
-
-type UserRecord = {
-    id: UserId;
-    name: UserName;
-    enabled: Enabled;
-    score: Score;
-};
-
-
-// ============================================================
-// GLOBAL INTERFACES
-// ============================================================
-
-interface User {
-    id: UserId;
-    name: UserName;
-    enabled: Enabled;
-    tags: UserTags;
-}
-
-interface Config {
-    retries: number;
-    timeout: number;
-    status: StatusValue;
-}
-
-interface Result {
-    success: boolean;
-    value: Score;
-    user: User;
-}
-
-
-// ============================================================
-// GLOBAL ENUMS
-// ============================================================
-
-enum UserStatus {
-    Active,
-    Inactive,
-    Banned,
-}
-
-enum Priority {
-    Low,
-    Medium,
-    High,
-}
-
-
-// ============================================================
-// GLOBAL STATE USING CUSTOM TYPES
-// ============================================================
-
-let currentUser: User = {
-    id: 1,
-    name: "Bloom",
-    enabled: true,
-    tags: ["compiler", "ui"],
-};
-
-let config: Config = {
-    retries: 3,
-    timeout: 1000,
-    status: "active",
-};
-
-let status: UserStatus = UserStatus.Active;
-
-let priority: Priority = Priority.High;
-
-let score: Score = 42;
-
-let pair: Pair = [1, "one"];
-
-let result: Result = {
-    success: true,
-    value: score,
-    user: currentUser,
-};
-
-let record: UserRecord = {
-    id: 1,
-    name: "Bloom",
-    enabled: true,
-    score: "excellent",
-};
-
-
-// ============================================================
-// GLOBAL DIRECTIVES
-// ============================================================
-
-#command
-function activateUser(user: User): Result {
-    currentUser = user;
-    currentUser.enabled = true;
-
-    status = UserStatus.Active;
-
-    return {
-        success: true,
-        value: currentUser.id,
-        user: currentUser,
-    };
-}
-
-
-#event
-function userChanged(user: User, newStatus: UserStatus) {
-    currentUser = user;
-    status = newStatus;
-}
-
-
-#reactive
-function updateScore(value: Score) {
-    score = value;
-}
-
-
-// ============================================================
-// GLOBAL FUNCTIONS USING CUSTOM TYPES
-// ============================================================
-
-function getUser(): User {
-    return currentUser;
-}
-
-
-function getConfig(): Config {
-    return config;
-}
-
-
-function makeResult(
-    user: User,
-    value: Score,
-): Result {
-    return {
-        success: true,
-        value: value,
-        user: user,
-    };
-}
-
-
-function updateUser(
-    user: User,
-    tags: UserTags,
-    enabled: Enabled,
-) {
-    user.tags = tags;
-    user.enabled = enabled;
-
-    currentUser = user;
-}
-
-
-function compareScores(
-    left: Score,
-    right: Score,
-): boolean {
-    return left === right;
-}
-
-
-function processPair(
-    value: Pair,
-): Score {
-    return value[0];
-}
-
-
-// ============================================================
-// LOCAL TYPE ALIASES / INTERFACES / ENUMS
-// ============================================================
-
-function localTypesTest() {
-
-    type LocalId = number;
-
-    type LocalName = string;
-
-    type LocalValue = number | boolean;
-
-    type LocalPair = [LocalId, LocalName];
-
-    type LocalTags = string[];
-
-    type LocalRecord = {
-        id: LocalId;
-        name: LocalName;
-        value: LocalValue;
-    };
-
-
-    interface LocalUser {
-        id: LocalId;
-        name: LocalName;
-        enabled: boolean;
-        tags: LocalTags;
+    interface User {
+        id: UserId;
+        name: UserName;
+        score: Score;
+        enabled: Enabled;
+        tags: UserTags;
     }
 
-
-    interface LocalResult {
-        success: boolean;
-        user: LocalUser;
-        value: LocalValue;
+    interface Config {
+        maxScore: Score;
+        enabled: Enabled;
     }
 
-
-    enum LocalStatus {
-        Ready,
-        Running,
-        Finished,
-    }
-
-
-    enum LocalPriority {
-        Low,
-        High,
-    }
-
-
-    // --------------------------------------------------------
-    // LOCAL VARIABLES USING LOCAL TYPES
-    // --------------------------------------------------------
-
-    let id: LocalId = 10;
-
-    let name: LocalName = "local";
-
-    let value: LocalValue = true;
-
-    let tags: LocalTags = ["a", "b"];
-
-    let pair: LocalPair = [id, name];
-
-    let record: LocalRecord = {
-        id: id,
-        name: name,
-        value: value,
-    };
-
-    let user: LocalUser = {
-        id: id,
-        name: name,
-        enabled: true,
-        tags: tags,
-    };
-
-    let localResult: LocalResult = {
-        success: true,
-        user: user,
-        value: value,
-    };
-
-    let localStatus: LocalStatus = LocalStatus.Ready;
-
-    let localPriority: LocalPriority = LocalPriority.High;
-
-
-    // --------------------------------------------------------
-    // LOCAL FUNCTION USING LOCAL TYPES
-    // --------------------------------------------------------
-
-    function processLocalUser(
-        user: LocalUser,
-        status: LocalStatus,
-        value: LocalValue,
-    ): LocalResult {
-
-        user.enabled = true;
-
-        localStatus = status;
-
-        localPriority = LocalPriority.High;
-
-        return {
-            success: true,
-            user: user,
-            value: value,
-        };
-    }
-
-
-    // --------------------------------------------------------
-    // LOCAL FUNCTION USING GLOBAL TYPES
-    // --------------------------------------------------------
-
-    function processGlobalUser(
-        user: User,
-        config: Config,
-    ): Result {
-
-        currentUser = user;
-
-        return {
-            success: config.retries > 0,
-            value: score,
-            user: user,
-        };
-    }
-
-
-    // --------------------------------------------------------
-    // NESTED SCOPE
-    // --------------------------------------------------------
-
-    {
-        type NestedValue = string | number;
-
-        interface NestedObject {
-            value: NestedValue;
-            enabled: boolean;
-        }
-
-        enum NestedStatus {
-            A,
-            B,
-        }
-
-        let nestedValue: NestedValue = "nested";
-
-        let nestedObject: NestedObject = {
-            value: nestedValue,
-            enabled: true,
-        };
-
-        let nestedStatus: NestedStatus = NestedStatus.A;
-
-        // Global types still visible.
-        let nestedUser: User = currentUser;
-
-        // Outer local types still visible.
-        let outerUser: LocalUser = user;
-
-        nestedObject.enabled = outerUser.enabled;
-
-        nestedValue = nestedObject.value;
-
-        localStatus = LocalStatus.Running;
-    }
-
-
-    // Back to function-local types.
-    localStatus = LocalStatus.Finished;
-
-    return localResult;
-}
-
-
-// ============================================================
-// SHADOWING CUSTOM TYPES
-// ============================================================
-
-function shadowedTypes() {
-
-    type Value = number;
-
-    interface Data {
-        value: Value;
-    }
-
-    enum State {
-        One,
-        Two,
-    }
-
-    let value: Value = 10;
-
-    let data: Data = {
-        value: value,
-    };
-
-    let state: State = State.One;
-
-
-    {
-        type Value = string;
-
-        interface Data {
-            value: Value;
-        }
-
-        enum State {
-            Inner,
-        }
-
-        let value: Value = "inner";
-
-        let data: Data = {
-            value: value,
-        };
-
-        let state: State = State.Inner;
-
-        // Global custom types remain visible.
-        let user: User = currentUser;
-
-        message = user.name;
-    }
-
-
-    // Back to outer local types.
-    value = 20;
-
-    data.value = value;
-
-    state = State.Two;
-}
-
-
-// ============================================================
-// MIXED GLOBAL + LOCAL CUSTOM TYPES
-// ============================================================
-
-function everything(
-    user: User,
-    result: Result,
-    pair: Pair,
-    score: Score,
-) {
-
-    type LocalScore = number | string;
-
-    interface LocalConfig {
-        retries: number;
-        score: LocalScore;
+    interface Result {
+        value: Score;
         user: User;
     }
 
-    enum LocalState {
-        Idle,
-        Running,
-        Done,
+    interface NestedResult {
+        result: Result;
+        pair: ScorePair;
+    }
+
+    enum UserStatus {
+        Active,
+        Pending,
+        Disabled,
+    }
+
+    enum Priority {
+        Low = 1,
+        Medium = 2,
+        High = 3,
     }
 
 
-    let localScore: LocalScore = score;
+    let user: User;
+    let item: User;
+    let category: UserName;
+    let score: Score;
+    let enabled: Enabled;
+    let status: UserStatus;
+    let priority: Priority;
 
-    let localConfig: LocalConfig = {
-        retries: config.retries,
-        score: localScore,
-        user: user,
-    };
+    let users: User[];
+    let items: User[];
+    let categories: UserName[];
 
-    let localState: LocalState = LocalState.Idle;
+    let pair: ScorePair;
+    let config: Config;
+    let result: Result;
+    let nested: NestedResult;
 
 
-    #reactive
-    function updateLocal(
-        config: LocalConfig,
-        state: LocalState,
-    ) {
-        localConfig = config;
-        localState = state;
+    // ============================================================
+    // DIRECTIVE FUNCTIONS
+    // ============================================================
 
-        currentUser = config.user;
+    #event
+    function onUserSelected(selected: User): void {
+        let score: Score = selected.score;
+
+        user.name;
+        selected.name;
+        score;
+        status;
+        priority;
+        config.enabled;
     }
 
 
     #command
-    function finish(
-        value: LocalScore,
+    function updateUser(
+        user: User,
+        score: Score,
     ): Result {
-        localScore = value;
-        localState = LocalState.Done;
+        user.name;
+        score;
+        result.value;
+        config.maxScore;
 
-        return {
-            success: true,
-            value: value,
-            user: currentUser,
-        };
+        return result;
     }
 
 
-    if (localConfig.retries > 0) {
-        localState = LocalState.Running;
+    #reactive
+    function calculateScore(
+        item: User,
+    ): Score {
+        item.score;
+        user.score;
+        score;
+        pair[0];
+        pair[1];
 
-        updateLocal(
-            localConfig,
-            localState,
-        );
+        return item.score + score;
     }
 
 
-    return finish(localScore);
-}
+    // ============================================================
+    // DIRECTIVE FUNCTIONS WITH NESTED TYPES
+    // ============================================================
 
+    #command
+    function processUser(user: User): Result {
 
-// ============================================================
-// TYPE REFERENCES THROUGH FUNCTIONS / CALLBACKS
-// ============================================================
+        type LocalScore = number;
 
-function callbackTest() {
-
-    type CallbackValue = User | Result;
-
-    interface CallbackData {
-        value: CallbackValue;
-        priority: Priority;
-    }
-
-
-    let data: CallbackData = {
-        value: currentUser,
-        priority: priority,
-    };
-
-
-    const callback = (
-        value: CallbackValue,
-    ): CallbackValue => {
-
-        if (typeof value === "object") {
-            return value;
+        interface LocalResult {
+            score: LocalScore;
+            user: User;
         }
 
-        return value;
-    };
+        let score: LocalScore;
 
+        user.name;
+        score;
+        result.value;
+        config.maxScore;
 
-    data.value = callback(data.value);
-
-    return data;
-}
-
-
-// ============================================================
-// DEEPLY NESTED TYPE REFERENCES
-// ============================================================
-
-function deeplyNested() {
-
-    type OuterValue = number | string;
-
-    interface Outer {
-        value: OuterValue;
+        return result;
     }
 
 
-    let outer: Outer = {
-        value: 10,
-    };
+    #reactive
+    function deriveUser(item: User): Score {
 
+        type ScoreValue = Score;
 
-    {
-        type MiddleValue = boolean;
-
-        interface Middle {
-            value: MiddleValue;
+        interface ScoreRecord {
+            value: ScoreValue;
+            user: User;
         }
 
-        let middle: Middle = {
-            value: true,
-        };
+        let record: ScoreRecord;
+
+        item.score;
+        record.value;
+        record.user.name;
+        score;
+
+        return item.score;
+    }
 
 
-        {
-            type InnerValue = [OuterValue, MiddleValue];
+    #event
+    function onPriorityChanged(
+        priority: Priority,
+    ): void {
 
-            interface Inner {
-                value: InnerValue;
-                outer: Outer;
-                middle: Middle;
+        priority;
+        status;
+        user.name;
+        config.enabled;
+        result.user.name;
+    }
+
+
+    // ============================================================
+    // NESTED FUNCTIONS INSIDE DIRECTIVE FUNCTIONS
+    // ============================================================
+
+    #command
+    function deeplyNested(user: User): Result {
+
+        let score: Score;
+
+        function inner(item: User): Result {
+
+            type UserName = number;
+
+            interface User {
+                id: UserId;
+                name: UserName;
+                score: Score;
             }
 
-            let inner: Inner = {
-                value: [outer.value, middle.value],
-                outer: outer,
-                middle: middle,
-            };
+            user.name;
+            item.name;
+            score;
+            result.user.name;
 
-            outer.value = inner.value[0];
-            middle.value = inner.value[1];
+            function deepest(user: User): Result {
+                user.name;
+                item.name;
+                score;
+                result.user.name;
+
+                return result;
+            }
+
+            return deepest(item);
         }
+
+        return inner(user);
     }
-}
-
-
-// ============================================================
-// GLOBAL DIRECTIVES USING LOCAL / GLOBAL TYPE REFERENCES
-// ============================================================
-
-#command
-function commandWithTypes(
-    user: User,
-    priority: Priority,
-): Result {
-
-    status = UserStatus.Active;
-
-    return makeResult(
-        user,
-        priority === Priority.High
-            ? 100
-            : "normal",
-    );
-}
-
-
-#event
-function eventWithTypes(
-    result: Result,
-    user: User,
-) {
-    currentUser = user;
-    score = result.value;
-}
-
-
-#reactive
-function reactiveWithTypes(
-    config: Config,
-    user: User,
-) {
-    currentUser = user;
-
-    if (config.retries > 0) {
-        currentUser.enabled = true;
-    }
-}
-
-
-// ============================================================
-// TOP LEVEL USE
-// ============================================================
-
-let finalUser: User = getUser();
-
-let finalConfig: Config = getConfig();
-
-let finalResult: Result = makeResult(
-    finalUser,
-    score,
-);
-
-let finalPair: Pair = [finalUser.id, finalUser.name];
-
-let finalRecord: UserRecord = record;
-
-activateUser(finalUser);
-
-userChanged(
-    finalUser,
-    UserStatus.Inactive,
-);
-
-updateScore(finalResult.value);
-
-commandWithTypes(
-    finalUser,
-    Priority.High,
-);
-
-eventWithTypes(
-    finalResult,
-    finalUser,
-);
-
-reactiveWithTypes(
-    finalConfig,
-    finalUser,
-);
 </script>
+
+
+<page>
+
+    <!-- ========================================================= -->
+    <!-- 1. PLAIN EACH                                             -->
+    <!-- ========================================================= -->
+
+    {#each users in users}
+
+        <panel>
+            <text>{users.length}</text>
+            <text>{user.name}</text>
+            <text>{score}</text>
+            <text>{category}</text>
+            <text>{enabled}</text>
+        </panel>
+
+    {/each}
+
+
+    <!-- ========================================================= -->
+    <!-- 2. SIMPLE VALUE SHADOWING                                 -->
+    <!-- ========================================================= -->
+
+    {#each user in users}
+
+        <panel>
+            <text>{user.name}</text>
+            <text>{user.score}</text>
+
+            <!-- global -->
+            <text>{score}</text>
+
+            <!-- local user + global score -->
+            <text>{user.score + score}</text>
+
+            <text>{describe(user)}</text>
+            <text>{getScore()}</text>
+        </panel>
+
+    {/each}
+
+
+    <!-- ========================================================= -->
+    <!-- 3. OUTER DOES NOT SHADOW, INNER DOES                      -->
+    <!-- ========================================================= -->
+
+    {#each category in categories}
+
+        <panel>
+
+            <text>{category}</text>
+            <text>{user.name}</text>
+            <text>{score}</text>
+
+            {#each item in items}
+
+                <panel>
+
+                    <text>{category}</text>
+                    <text>{item.name}</text>
+                    <text>{user.name}</text>
+                    <text>{score}</text>
+
+                    {#each user in users}
+
+                        <panel>
+
+                            <!-- inner user -->
+                            <text>{user.name}</text>
+
+                            <!-- middle item -->
+                            <text>{item.name}</text>
+
+                            <!-- outer category -->
+                            <text>{category}</text>
+
+                            <!-- global score -->
+                            <text>{score}</text>
+
+                            <text>
+                                {user.score + item.score + score}
+                            </text>
+
+                            <text>
+                                {describe(user)}
+                            </text>
+
+                        </panel>
+
+                    {/each}
+
+                </panel>
+
+            {/each}
+
+        </panel>
+
+    {/each}
+
+
+    <!-- ========================================================= -->
+    <!-- 4. THREE LEVELS OF SHADOWING                              -->
+    <!-- ========================================================= -->
+
+    {#each user in users}
+
+        <panel>
+
+            <text>{user.name}</text>
+
+            {#each item in items}
+
+                <panel>
+
+                    <text>{user.name}</text>
+                    <text>{item.name}</text>
+
+                    {#each score in items}
+
+                        <panel>
+
+                            <!-- score = inner context -->
+                            <text>{score.name}</text>
+
+                            <!-- item = middle context -->
+                            <text>{item.name}</text>
+
+                            <!-- user = outer context -->
+                            <text>{user.name}</text>
+
+                            <!-- category = global -->
+                            <text>{category}</text>
+
+                            <text>{score.score + item.score}</text>
+
+                        </panel>
+
+                    {/each}
+
+                    <!-- score goes back to global -->
+                    <text>{score}</text>
+
+                </panel>
+
+            {/each}
+
+            <text>{user.name}</text>
+
+        </panel>
+
+    {/each}
+
+
+    <!-- ========================================================= -->
+    <!-- 5. IF / ELIF / ELSE INSIDE EACH                          -->
+    <!-- ========================================================= -->
+
+    {#each item in items}
+
+        {#if item.score > score}
+
+            <text>{item.name}</text>
+            <text>{item.score}</text>
+            <text>{score}</text>
+
+        {:elif item.score === score}
+
+            <text>{item.name}</text>
+            <text>{score}</text>
+
+        {:else}
+
+            <text>{item.name}</text>
+            <text>{score}</text>
+
+        {/if}
+
+    {/each}
+
+
+    <!-- ========================================================= -->
+    <!-- 6. NESTED EACH + IF + SHADOWING                          -->
+    <!-- ========================================================= -->
+
+    {#each user in users}
+
+        {#if user.enabled}
+
+            {#each item in items}
+
+                {#if item.score > user.score}
+
+                    <text>{user.name}</text>
+                    <text>{item.name}</text>
+                    <text>{user.score}</text>
+                    <text>{item.score}</text>
+
+                {:elif item.score === user.score}
+
+                    <text>{user.name}</text>
+                    <text>{item.name}</text>
+
+                {:else}
+
+                    <text>{user.name}</text>
+                    <text>{item.name}</text>
+                    <text>{score}</text>
+
+                {/if}
+
+            {/each}
+
+        {:else}
+
+            <text>{user.name}</text>
+            <text>{enabled}</text>
+
+        {/if}
+
+    {/each}
+
+
+    <!-- ========================================================= -->
+    <!-- 7. SAME NAME AT FOUR DIFFERENT LEVELS                    -->
+    <!-- ========================================================= -->
+
+    {#each user in users}
+
+        <text>{user.name}</text>
+
+        {#each user in users}
+
+            <text>{user.name}</text>
+
+            {#each user in users}
+
+                <text>{user.name}</text>
+
+                {#each user in users}
+
+                    <text>{user.name}</text>
+                    <text>{score}</text>
+
+                {/each}
+
+                <text>{user.name}</text>
+
+            {/each}
+
+            <text>{user.name}</text>
+
+        {/each}
+
+        <text>{user.name}</text>
+
+    {/each}
+
+
+    <!-- ========================================================= -->
+    <!-- 8. DIFFERENT NAMES, SAME DEPTH                           -->
+    <!-- ========================================================= -->
+
+    {#each user in users}
+
+        {#each item in items}
+
+            {#each category in categories}
+
+                <text>{user.name}</text>
+                <text>{item.name}</text>
+                <text>{category}</text>
+
+                <text>{score}</text>
+                <text>{enabled}</text>
+                <text>{status}</text>
+
+                <text>
+                    {compare(user.score, item.score)}
+                </text>
+
+            {/each}
+
+        {/each}
+
+    {/each}
+
+
+    <!-- ========================================================= -->
+    <!-- 9. TYPE-HEAVY EXPRESSIONS                                -->
+    <!-- ========================================================= -->
+
+    <panel
+        data-user={user.id}
+        data-score={score}
+        data-enabled={enabled}
+        data-status={status}
+    >
+
+        <text>{user.name}</text>
+        <text>{user.tags.length}</text>
+        <text>{pair[0] + pair[1]}</text>
+        <text>{result.user.name}</text>
+        <text>{nested.result.value}</text>
+        <text>{nested.pair[0]}</text>
+
+    </panel>
+
+
+    <!-- ========================================================= -->
+    <!-- 10. ABSOLUTE NIGHTMARE                                   -->
+    <!-- ========================================================= -->
+
+    {#each user in users}
+
+        {#each item in user.tags}
+
+            {#each score in items}
+
+                {#each category in categories}
+
+                    <panel>
+
+                        <text>{user.name}</text>
+
+                        <!-- item is actually a tag here -->
+                        <text>{item}</text>
+
+                        <!-- score is actually a User here -->
+                        <text>{score.name}</text>
+
+                        <text>{category}</text>
+
+                        <!-- globals -->
+                        <text>{enabled}</text>
+                        <text>{status}</text>
+                        <text>{priority}</text>
+
+                        <!-- mixed lexical resolution -->
+                        <text>
+                            {score.score + user.score}
+                        </text>
+
+                        <text>
+                            {describe(score)}
+                        </text>
+
+                        {#if score.enabled}
+
+                            <text>{score.name}</text>
+
+                            {#each user in users}
+
+                                <text>{user.name}</text>
+                                <text>{score.name}</text>
+                                <text>{category}</text>
+                                <text>{enabled}</text>
+
+                            {/each}
+
+                        {:elif enabled}
+
+                            <text>{user.name}</text>
+                            <text>{score.name}</text>
+
+                        {:else}
+
+                            <text>{category}</text>
+                            <text>{status}</text>
+
+                        {/if}
+
+                    </panel>
+
+                {/each}
+
+            {/each}
+
+        {/each}
+
+    {/each}
+
+</page>
