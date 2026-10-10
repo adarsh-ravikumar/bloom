@@ -29,6 +29,7 @@ pub struct Fragment {
 #[derive(Debug, Clone)]
 pub enum FragmentNode {
     Widget(Widget),
+    Parts(Parts),
     Text(Span),
     Expression(Span),
     Control(Control),
@@ -40,6 +41,15 @@ pub enum Part {
     Expression(Span),
 }
 pub type Parts = Vec<Part>;
+
+impl Part {
+    pub fn as_fragment(&self) -> FragmentNode {
+        match self {
+            Self::Text(span) => FragmentNode::Text(*span),
+            Self::Expression(span) => FragmentNode::Expression(*span),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Widget {

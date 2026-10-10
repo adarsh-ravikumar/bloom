@@ -1,0 +1,15 @@
+<script>
+  let count = 0;
+  let otherCount = 9;
+  let notAState = "definitely not a state";
+</script>
+
+<:div>
+  <:button>
+    Button!
+  </:button> 
+  <:p>
+    Hello World! {count + otherCount > 5 ? count : otherCount.chain.expression.here}
+    It's a me - Mario!
+  </:p>
+</:div>

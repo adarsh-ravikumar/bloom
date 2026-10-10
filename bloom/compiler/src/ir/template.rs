@@ -26,11 +26,11 @@ type ExpressionId = usize;
 #[derive(Debug, Clone)]
 pub enum IrNode {
     StartParts { id: NodeId },
-    Text { value: String },
-    Expression { span: Span, id: ExpressionId },
+    Text { value: String, id: NodeId, parent: NodeId },
+    Expression { span: Span, id: NodeId, expr_id: ExpressionId, parent: NodeId },
     EndParts { id: NodeId, parent: NodeId },
 
-    StartWidget { name: String, id: NodeId },
+    StartWidget { name: String, id: NodeId, is_platform: bool },
     EndWidget { id: NodeId, parent: NodeId },
 
     StartAttributeList,
@@ -56,6 +56,27 @@ pub struct Expression {
     pub context_uses: Vec<SymbolUse>,
 }
 
+fn sanitize_text(text: String) -> String {
+    let mut san = Vec::new();
+
+    for char in &text.into_bytes() {
+        if *char == b'\'' {
+            san.push(b'\\');
+            san.push(b'\'');
+        } else if *char == b'"' {
+            san.push(b'\\');
+            san.push(b'"');
+        } else if *char == b'\'' {
+            san.push(b'\\');
+            san.push(b'`');
+        } else {
+            san.push(*char);
+        }
+    }
+
+    String::from_utf8(san).unwrap()
+}
+
 impl<'a> TemplateIr<'a> {
     pub fn new(ast: &'a Root, src: &'a Source) -> Self {
         Self {
@@ -78,14 +99,21 @@ impl<'a> TemplateIr<'a> {
         self.ir_nodes.push(node)
     }
 
-    fn visit_text(&mut self, span: Span) {
+    fn visit_text(&mut self, span: Span, parent: NodeId) {
+        let id = self.get_node_id();
+
+        let value = self.src.view_span(span).to_string();
+
         self.emit_node(IrNode::Text {
-            value: self.src.view_span(span).to_string(),
+            id,
+            value: sanitize_text(value),
+            parent,
         });
     }
 
-    fn visit_expression(&mut self, span: Span) -> ExpressionId {
-        let id = self.expressions.len();
+    fn visit_expression(&mut self, span: Span, parent: NodeId) -> ExpressionId {
+        let expr_id = self.expressions.len();
+        let id = self.get_node_id();
 
         self.expressions.push(Expression {
             source: self.src.view_span(span).to_string(),
@@ -94,7 +122,12 @@ impl<'a> TemplateIr<'a> {
             context_vars: self.context_vars.clone(),
         });
 
-        self.emit_node(IrNode::Expression { span, id });
+        self.emit_node(IrNode::Expression {
+            span,
+            expr_id,
+            id,
+            parent,
+        });
 
         id
     }
@@ -106,9 +139,9 @@ impl<'a> TemplateIr<'a> {
 
         for part in parts {
             match part {
-                Part::Text(span) => self.visit_text(*span),
+                Part::Text(span) => self.visit_text(*span, id),
                 Part::Expression(span) => {
-                    self.visit_expression(*span);
+                    self.visit_expression(*span, id);
                 }
             }
         }
@@ -122,6 +155,7 @@ impl<'a> TemplateIr<'a> {
         self.emit_node(IrNode::StartWidget {
             name: self.src.view_span(widget.name).to_string(),
             id,
+            is_platform: widget.is_platform,
         });
 
         self.emit_node(IrNode::StartAttributeList);
@@ -134,7 +168,8 @@ impl<'a> TemplateIr<'a> {
 
             match &attrib.value {
                 AttributeValue::Expression(span) => {
-                    self.visit_expression(*span);
+                    //TODO: handle visit expression parent here
+                    self.visit_expression(*span, 0);
                 }
 
                 AttributeValue::Parts(parts) => {
@@ -177,14 +212,16 @@ impl<'a> TemplateIr<'a> {
     fn visit_if(&mut self, if_ctrl: &IfControl, parent: NodeId) {
         let if_id = self.get_node_id();
 
-        let test = Some(self.visit_expression(if_ctrl.condition));
+        //TODO: handle visit expression parent here
+        let test = Some(self.visit_expression(if_ctrl.condition, 0));
 
         self.emit_node(IrNode::StartIfBlock { test, id: if_id });
 
         self.visit_fragment(&if_ctrl.body, if_id);
 
         for case in &if_ctrl.elifs {
-            let test = Some(self.visit_expression(if_ctrl.condition));
+            //TODO: handle visit expression parent here
+            let test = Some(self.visit_expression(if_ctrl.condition, 0));
 
             let case_id = self.get_node_id();
 
@@ -220,7 +257,8 @@ impl<'a> TemplateIr<'a> {
     fn visit_each(&mut self, each_ctrl: &EachControl, parent: NodeId) {
         let each_id = self.get_node_id();
 
-        let iterable = Some(self.visit_expression(each_ctrl.expression));
+        //TODO: handle visit expression parent here
+        let iterable = Some(self.visit_expression(each_ctrl.expression, 0));
 
         let context = self.src.view_span(each_ctrl.context).to_string();
 
@@ -244,15 +282,18 @@ impl<'a> TemplateIr<'a> {
     fn visit_fragment(&mut self, frag: &Fragment, parent: NodeId) {
         for node in &frag.nodes {
             match node {
-                FragmentNode::Text(span) => self.visit_text(*span),
+                FragmentNode::Text(span) => self.visit_text(*span, parent),
                 FragmentNode::Expression(span) => {
-                    self.visit_expression(*span);
+                    self.visit_expression(*span, parent);
                 }
                 FragmentNode::Widget(widget) => {
                     self.visit_widget(widget, parent)
                 }
                 FragmentNode::Control(control) => {
                     self.visit_control(control, parent)
+                }
+                FragmentNode::Parts(parts) => {
+                    self.visit_parts(parts, parent);
                 }
             }
         }

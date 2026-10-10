@@ -1,2 +1,2 @@
 mod r#gen;
-pub use r#gen::CodegenJs;
+pub use r#gen::GenerateJs;

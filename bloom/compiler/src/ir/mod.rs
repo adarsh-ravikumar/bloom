@@ -1,5 +1,5 @@
 mod script;
 mod template;
 
-pub use script::SemanticAnalyzer;
-pub use template::TemplateIr;
+pub use script::{SemanticAnalyzer, Symbol, SymbolUse};
+pub use template::{Expression, IrNode, TemplateIr};

@@ -1,5 +1,5 @@
 use crate::parser::{
-    Parser,
+    Parser, Part, Parts,
     nodes::{Fragment, FragmentNode},
     parser::FragmentEnd,
 };
@@ -7,6 +7,7 @@ use crate::parser::{
 impl<'a> Parser<'a> {
     pub fn parse_fragment(&mut self, expected_end: &[FragmentEnd]) -> Fragment {
         let mut nodes: Vec<FragmentNode> = Vec::new();
+        let mut parts: Parts = Vec::new();
 
         loop {
             let cur = self.peek(0);
@@ -15,6 +16,15 @@ impl<'a> Parser<'a> {
                 0 => break,
 
                 b'<' => {
+                    if !parts.is_empty() {
+                        if parts.len() == 1 {
+                            nodes.push(parts.first().unwrap().as_fragment())
+                        } else {
+                            nodes.push(FragmentNode::Parts(parts.clone()));
+                            parts.clear();
+                        }
+                    }
+
                     if self.eat("<!--") {
                         self.parse_comment();
                         continue;
@@ -45,8 +55,26 @@ impl<'a> Parser<'a> {
 
                 b'{' => {
                     if self.peek(1) == b'#' {
+                        if !parts.is_empty() {
+                            if parts.len() == 1 {
+                                nodes.push(parts.first().unwrap().as_fragment())
+                            } else {
+                                nodes.push(FragmentNode::Parts(parts.clone()));
+                                parts.clear();
+                            }
+                        }
+
                         nodes.push(self.parse_control());
                     } else if self.peek(1) == b'/' {
+                        if !parts.is_empty() {
+                            if parts.len() == 1 {
+                                nodes.push(parts.first().unwrap().as_fragment())
+                            } else {
+                                nodes.push(FragmentNode::Parts(parts.clone()));
+                                parts.clear();
+                            }
+                        }
+
                         if expected_end.contains(&FragmentEnd::ControlEnd) {
                             // we have spotted an end tag.
                             // we must return whatever we have parsed as the fragment.
@@ -58,6 +86,15 @@ impl<'a> Parser<'a> {
                             return Fragment { nodes };
                         }
                     } else if self.peek(1) == b':' {
+                        if !parts.is_empty() {
+                            if parts.len() == 1 {
+                                nodes.push(parts.first().unwrap().as_fragment())
+                            } else {
+                                nodes.push(FragmentNode::Parts(parts.clone()));
+                                parts.clear();
+                            }
+                        }
+
                         if expected_end.contains(&FragmentEnd::ControlCase) {
                             // we have spotted an end tag.
                             // we must return whatever we have parsed as the fragment.
@@ -74,7 +111,7 @@ impl<'a> Parser<'a> {
                         let expr_start = self.pos;
 
                         self.consume(1);
-                        nodes.push(FragmentNode::Expression(
+                        parts.push(Part::Expression(
                             self.parse_embedded_expression("}"),
                         ));
                         if !self.eat("}") {
@@ -86,7 +123,7 @@ impl<'a> Parser<'a> {
                 _ => {
                     // default to parse text
                     if let Some(text) = self.parse_text(&[b'<', b'{']) {
-                        nodes.push(FragmentNode::Text(text))
+                        parts.push(Part::Text(text))
                     }
                 }
             }

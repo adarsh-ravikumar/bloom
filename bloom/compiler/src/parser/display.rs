@@ -123,6 +123,7 @@ impl<'a> Parser<'a> {
                     }
 
                     if let Some(frag) = &elem.fragment {
+                        println!("{base_indent}{ch}  fragment:");
                         self.display_fragment(frag, level + 2, '|');
                     }
                 }
@@ -139,6 +140,28 @@ impl<'a> Parser<'a> {
                         "{base_indent}expr: {:?}",
                         self.src.view_span(expr)
                     );
+                }
+
+                FragmentNode::Parts(parts) => {
+                    println!("{base_indent}parts:",);
+
+                    for part in parts {
+                        match &part {
+                            Part::Text(text) => {
+                                println!(
+                                    "{base_indent}{ch}  text: {:?}",
+                                    self.src.view_span(text)
+                                );
+                            }
+
+                            Part::Expression(expr) => {
+                                println!(
+                                    "{base_indent}{ch}  expr: {:?}",
+                                    self.src.view_span(expr)
+                                );
+                            }
+                        }
+                    }
                 }
 
                 FragmentNode::Control(control_block) => match &control_block {

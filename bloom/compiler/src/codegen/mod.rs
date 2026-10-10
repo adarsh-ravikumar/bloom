@@ -1,3 +1,3 @@
 mod js;
 
-pub use js::CodegenJs;
+pub use js::GenerateJs;
