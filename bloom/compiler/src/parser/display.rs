@@ -1,5 +1,5 @@
 use crate::parser::{
-    Parser,
+    Attribute, Parser,
     nodes::{AttributeValue, Control, Fragment, FragmentNode, Part},
 };
 
@@ -59,6 +59,62 @@ impl<'a> Parser<'a> {
                                         self.src.view_span(attrib.name),
                                         self.src.view_span(expr)
                                     );
+                                }
+
+                                AttributeValue::BindingAttribute {
+                                    bind_from,
+                                    bind_to,
+                                    value,
+                                } => {
+                                    print!(
+                                        "{base_indent}   {}:{}",
+                                        self.src.view_span(bind_from),
+                                        self.src.view_span(bind_to),
+                                    );
+
+                                    if let Some(v) = value {
+                                        match &**v {
+                                            AttributeValue::Expression(
+                                                expr,
+                                            ) => {
+                                                print!(
+                                                    " = {}\n",
+                                                    self.src.view_span(expr)
+                                                )
+                                            }
+                                            AttributeValue::Parts(parts) => {
+                                                print!(" = \n",);
+
+                                                for part in parts {
+                                                    match part {
+                                                        Part::Text(text) => {
+                                                            println!(
+                                                                "{base_indent}      text: {:?}",
+                                                                self.src
+                                                                    .view_span(
+                                                                        text
+                                                                    )
+                                                            );
+                                                        }
+                                                        Part::Expression(
+                                                            expr,
+                                                        ) => {
+                                                            println!(
+                                                                "{base_indent}      expr: {:?}",
+                                                                self.src
+                                                                    .view_span(
+                                                                        expr
+                                                                    )
+                                                            );
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            _ => print!("\n"),
+                                        }
+                                    } else {
+                                        print!("\n");
+                                    }
                                 }
                             }
                         }

@@ -46,6 +46,7 @@ pub struct Widget {
     pub name: Span,
     pub attributes: Vec<Attribute>,
     pub fragment: Option<Fragment>,
+    pub is_platform: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -86,5 +87,10 @@ pub struct Attribute {
 pub enum AttributeValue {
     Expression(Span),
     Parts(Parts),
+    BindingAttribute {
+        bind_from: Span,
+        bind_to: Span,
+        value: Option<Box<AttributeValue>>,
+    },
     True,
 }

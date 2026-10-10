@@ -1,0 +1,28 @@
+<script>
+  enum SquareState{
+    MovedFrom,
+    MovedTo,
+  }
+
+  enum SquareColor {
+    Black = "#7D945D",
+    White = "#EEEED5"
+  }
+
+  export let piece: string;
+
+  export let state: SquareState;
+  export let color: SquareColor;
+</script>
+
+<container id="square" center>
+    {#if piece != null}
+      <image src="{piece}.svg"/>
+    {/if}
+</container>
+
+<style>
+  #square {
+    color: {{ color }};
+  }
+</style>

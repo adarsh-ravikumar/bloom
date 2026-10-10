@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::ir::template::Expression;
 use oxc_allocator::{Allocator as OxcAllocator, Vec as OxcVec};
 
-use oxc_ast::ast::VariableDeclarationKind;
+use oxc_ast::ast::{Declaration, VariableDeclarationKind};
 #[rustfmt::skip]
 use oxc_ast::ast::{
     Argument as OxcArgument,
@@ -99,6 +99,7 @@ pub enum Symbol {
         type_annotation: Option<TypeAnnotation>,
         is_let: bool,
         is_state: bool,
+        is_export: bool,
         init: Option<OxcSpan>,
     },
 
@@ -1146,7 +1147,7 @@ where
                      * : oxc_ast::ast::AssignmentTarget<'a> variants
                      */
                     OxcForStatementLeft::VariableDeclaration(decl) => {
-                        self.var_decl(new_context, decl, uses);
+                        self.var_decl(new_context, decl, false, uses);
                     }
 
                     _ => {
@@ -1182,7 +1183,7 @@ where
                      * : oxc_ast::ast::AssignmentTarget<'a> variants
                      */
                     OxcForStatementLeft::VariableDeclaration(decl) => {
-                        self.var_decl(new_context, decl, uses);
+                        self.var_decl(new_context, decl, false, uses);
                     }
 
                     _ => {
@@ -1220,7 +1221,7 @@ where
                          * : oxc_ast::ast::Expression<'a> variants
                          */
                         OxcForStatementInit::VariableDeclaration(decl) => {
-                            self.var_decl(new_context, decl, uses);
+                            self.var_decl(new_context, decl, false, uses);
                         }
 
                         _ => {
@@ -1376,7 +1377,7 @@ where
 
             // declarations
             OxcStatement::VariableDeclaration(stmt) => {
-                self.var_decl(context, &stmt, uses);
+                self.var_decl(context, &stmt, false, uses);
             }
 
             OxcStatement::FunctionDeclaration(stmt) => {
@@ -1610,7 +1611,22 @@ where
 
             OxcStatement::ExportDefaultDeclaration(_) => return,
 
-            OxcStatement::ExportDeclaration(_) => return,
+            OxcStatement::ExportDeclaration(decl) => {
+                /*
+                 * struct oxc_ast::ast::ExportDeclaration<'a>
+                 * declaration: Declaration<'a>
+                 */
+                match &decl.declaration {
+                    Declaration::VariableDeclaration(decl) => {
+                        self.var_decl(context, decl, true, uses);
+                    }
+                    _ => self.statement(
+                        context,
+                        decl.declaration.as_statement(),
+                        uses,
+                    ),
+                }
+            }
 
             OxcStatement::ExportNamedDeclaration(_) => return,
 
@@ -1626,6 +1642,7 @@ where
         &mut self,
         context: usize,
         decl: &OxcVariableDeclaration<'a>,
+        is_export: bool,
         uses: &mut Vec<SymbolUse>,
     ) {
         let is_let = matches!(decl.kind, VariableDeclarationKind::Let);
@@ -1658,6 +1675,7 @@ where
                     is_state: false,
                     is_let,
                     init,
+                    is_export,
                 },
                 &decl.id,
                 uses,

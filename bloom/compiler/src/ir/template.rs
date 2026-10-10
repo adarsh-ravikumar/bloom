@@ -147,6 +147,14 @@ impl<'a> TemplateIr<'a> {
                 AttributeValue::True => {
                     self.emit_node(IrNode::AttributeTrue);
                 }
+
+                AttributeValue::BindingAttribute {
+                    bind_from,
+                    bind_to,
+                    value,
+                } => {
+                    todo!()
+                }
             }
         }
 

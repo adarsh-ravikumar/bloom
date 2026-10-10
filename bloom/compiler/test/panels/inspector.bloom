@@ -1,0 +1,74 @@
+<script>
+  let brightness: number;
+  let contrast: number;
+  let saturation: number;
+  let hue: number;
+
+  enum Format {
+    PNG,
+    JPG,
+    SVG
+  }
+
+  interface ExportOptions {
+    format: Format,
+    scale: number
+  }
+
+  let format: Format;
+  let scale: number;
+
+  #event
+  function exportImage(): ExportOptions {
+    return {
+        format, scale
+    };
+  }
+</script>
+
+<panel floatable dockable>
+  <column>
+    <text>Image Editor</text>
+
+    <row>
+      <slider id="brightness" min={0} max={100} step={1} value:brightness/>
+      <text>{brightness}%</text>
+    </row>
+
+    <row>
+      <slider id="contrast" min={0} max={100} step={1} value:contrast/>
+      <text>{contrast}%</text>
+    </row>
+
+    <row>
+      <slider id="saturation" min={0} max={100} step={1} value:saturiation/>
+      <text>{saturation}%</text>
+    </row>
+
+    <row>
+      <slider id="hue" min={0} max={100} step={0.5} value:hue/>
+      <text>{hue}%</text>
+    </row>
+
+    <row>
+      <button id="cw" on:click>
+        <image src="cw.svg" />
+      </button>
+
+      <button id="ccw" on:click>
+        <image src="cw.svg" />
+      </button>
+    </row>
+
+    <row>
+      <dropdown from={Format} value:format></dropdown>
+      <radio value:scale>
+        <option value={0.5}> 0.5x </option>
+        <option value={1}> 1x </option>
+        <option value={1.5}> 1.5x </option>
+        <option value={2}> 2x </option>
+      </radio>
+      <button on:click={exportImage}>Export</button>
+    </row>
+  </column>
+</panel>

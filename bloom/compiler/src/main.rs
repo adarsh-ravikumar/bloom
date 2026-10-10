@@ -33,21 +33,21 @@ fn main() {
         return;
     }
 
-    // print!("Abstract syntax tree:");
-    // parser.display();
+    println!("Abstract syntax tree:");
+    parser.display();
 
-    let mut template_ir = TemplateIr::new(&parser.root, &source);
-    template_ir.generate_ir();
+    // let mut template_ir = TemplateIr::new(&parser.root, &source);
+    // template_ir.generate_ir();
 
-    println!("\nIR");
-    for node in &template_ir.ir_nodes {
-        println!("{:?}", node);
-    }
-
-    println!("\nExpressions");
-    for expr in &template_ir.expressions {
-        println!("{:?}", expr);
-    }
+    // println!("\nIR");
+    // for node in &template_ir.ir_nodes {
+    //     println!("{:?}", node);
+    // }
+    //
+    // println!("\nExpressions");
+    // for expr in &template_ir.expressions {
+    //     println!("{:?}", expr);
+    // }
 
     // script
 
@@ -60,42 +60,35 @@ fn main() {
     //     );
     // }
 
-    if let Some(script) = &parser.root.script {
-        let mut analyzer = SemanticAnalyzer::new(source.view_full());
-        // println!("\nPreprocessor");
-        // println!("Stripped script:");
-        // println!("{}", script.source);
-        println!("Metadata:");
-        println!("{:?}", script.pre);
+    // if let Some(script) = &parser.root.script {
+    //     let mut analyzer = SemanticAnalyzer::new();
+    //     // println!("\nPreprocessor");
+    //     // println!("Stripped script:");
+    //     // println!("{}", script.source);
+    //     // println!("Metadata:");
+    //     // println!("{:?}", script.pre);
+    //
+    //     let oxc_allocator = OxcAllocator::new();
+    //     analyzer.analyze(
+    //         &oxc_allocator,
+    //         &script.source,
+    //         &mut template_ir.expressions,
+    //     );
+    //     //
+    //     // println!("Context Tree");
+    //     println!("Global symbols:");
+    //     for (k, v) in &analyzer.context_tree.get(0).unwrap().symbols {
+    //         println!("{} :  {:?}", k, v);
+    //     }
+    //     //
+    //     // println!("Global script uses");
+    //     // for r#use in &analyzer.uses {
+    //     //     println!("{:?}", r#use)
+    //     // }
+    // }
 
-        let oxc_allocator = OxcAllocator::new();
-        analyzer.analyze(
-            &oxc_allocator,
-            &script.source,
-            &mut template_ir.expressions,
-        );
-        //
-        // println!("Context Tree");
-        // for context in &analyzer.context_tree {
-        //     println!(
-        //         "\ncontext {} (parent: {})",
-        //         context.context, context.parent
-        //     );
-        //
-        //     println!("symbols:");
-        //     for (k, v) in &context.symbols {
-        //         println!("{} :  {:?}", k, v);
-        //     }
-        // }
-        //
-        // println!("Global script uses");
-        // for r#use in &analyzer.uses {
-        //     println!("{:?}", r#use)
-        // }
-    }
-
-    println!("\nExpressions after resolution");
-    for expr in &template_ir.expressions {
-        println!("{:?}", expr);
-    }
+    // println!("\nExpressions after resolution");
+    // for expr in &template_ir.expressions {
+    //     println!("{:?}", expr);
+    // }
 }

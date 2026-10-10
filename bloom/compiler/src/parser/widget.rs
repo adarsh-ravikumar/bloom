@@ -1,7 +1,7 @@
 use crate::{
     common::{ERRONEOUS_SPAN, Span},
     parser::{
-        Parser, Script,
+        Parser,
         nodes::{Attribute, AttributeValue, FragmentNode, Part, Widget},
         parser::FragmentEnd,
     },
@@ -12,7 +12,10 @@ impl<'a> Parser<'a> {
         let tag_open_pos = self.pos;
         self.eat("<");
 
+        let is_platform = self.eat(":");
+
         let name_start = self.pos; // record for diagnostics
+        //
         let name = self.parse_ident(&[b'>']);
         if name == ERRONEOUS_SPAN {
             self.emit_invalid_tag_name(name_start, self.pos);
@@ -49,6 +52,7 @@ impl<'a> Parser<'a> {
                 name,
                 attributes,
                 fragment: None,
+                is_platform,
             },
             self_closing,
         )
@@ -62,6 +66,7 @@ impl<'a> Parser<'a> {
             if !self.eat("}") {
                 self.emit_unclosed_expression(expr_start);
             }
+
             return Some(AttributeValue::Expression(expr));
         }
 
@@ -119,12 +124,54 @@ impl<'a> Parser<'a> {
         while !matches!(self.peek(0), b'>' | b'<' | b'/') && self.peek(0) != 0 {
             // ident
             let start = self.pos; // record for diagnostics
-            let name = self.parse_ident(&[b'=', b'{', b'>', b'"', b'\'']);
+            let name = self.parse_ident(&[b'=', b'{', b'>', b'"', b'\'', b':']);
+
             if name == ERRONEOUS_SPAN {
                 self.emit_invalid_attribute_name(start, self.pos);
             }
 
             self.consume_whitespace();
+
+            // binding
+            if self.eat(":") {
+                self.consume_whitespace();
+
+                let bind_to =
+                    self.parse_ident(&[b'=', b'{', b'>', b'"', b'\'', b':']);
+
+                self.consume_whitespace();
+
+                let bind_from = name;
+                let name = Span {
+                    start: name.start,
+                    end: bind_to.end,
+                };
+
+                let value = if self.eat("=") {
+                    // if there is a binding value, we consume it.
+                    if let Some(v) = self.parse_attribute_value() {
+                        Some(Box::new(v))
+                    } else {
+                        // invalid value
+                        // diagnostics would have already been pushed. do nothing here.
+                        continue;
+                    }
+                } else {
+                    None
+                };
+
+                attributes.push(Attribute {
+                    name,
+                    value: AttributeValue::BindingAttribute {
+                        bind_from,
+                        bind_to,
+                        value,
+                    },
+                });
+
+                self.consume_whitespace();
+                continue;
+            }
 
             // boolean
             if !self.eat("=") {
@@ -143,6 +190,8 @@ impl<'a> Parser<'a> {
                 attributes.push(Attribute { name, value });
             } else {
                 // invalid value
+                // diagnostics would have already been pushed. do nothing here.
+                continue;
             }
 
             self.consume_whitespace();
