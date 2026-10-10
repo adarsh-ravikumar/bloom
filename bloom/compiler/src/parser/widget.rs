@@ -12,14 +12,14 @@ impl<'a> Parser<'a> {
         let tag_open_pos = self.pos;
         self.eat("<");
 
-        let is_platform = self.eat(":");
-
         let name_start = self.pos; // record for diagnostics
-        //
-        let name = self.parse_ident(&[b'>']);
+        let is_platform = self.eat(":");
+        let mut name = self.parse_ident(&[b'>']);
         if name == ERRONEOUS_SPAN {
             self.emit_invalid_tag_name(name_start, self.pos);
         }
+
+        name.start = name_start; // we keep the ":" in the name
 
         self.consume_whitespace();
 
@@ -213,10 +213,15 @@ impl<'a> Parser<'a> {
         }
 
         let closing_name_start = self.pos; // record for diagnostics
-        let closing_name = self.parse_ident(&[b'>']);
+        self.eat(":"); // if this is a closing tag for a platform, the ":" must be consumed
+        // before parsing the identifier. but the name string should still
+        // include the ":", as that's what's expected.
+        let mut closing_name = self.parse_ident(&[b'>']);
         if closing_name == ERRONEOUS_SPAN {
             self.emit_invalid_closing_tag_name(closing_name_start, self.pos);
         }
+
+        closing_name.start = closing_name_start;
 
         // we check to ensure that the widget's name itself is non-erroneous,
         // as it is nonsensical to report that the tags don't match when the name
@@ -225,17 +230,20 @@ impl<'a> Parser<'a> {
             // look for candidate
             let mut candidate_exists = false;
 
-            while !self.open_tags.is_empty() {
-                let open = self.open_tags.pop().unwrap();
-
+            for (mut i, open) in self.open_tags.iter().rev().enumerate() {
                 if self.src.view_span(closing_name) == self.src.view_span(open)
                 {
                     candidate_exists = true;
                     self.last_closed_tag = closing_name;
 
-                    // we push it back to the open_tags stack as the actual widget
-                    // to which the tag belongs to will consume it
-                    self.open_tags.push(open);
+                    // we have found a match. now, we can safely pop all the tags
+                    // we pop until we hit i = 1, which means the tag at the top
+                    // is the currently matched tag
+                    while i > 1 {
+                        self.open_tags.pop();
+                        i -= 1;
+                    }
+
                     break;
                 }
             }
