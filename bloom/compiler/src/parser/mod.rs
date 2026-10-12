@@ -1,15 +1,6 @@
-mod control;
-mod cursor;
-mod diagnostics;
-mod display;
-mod embedded;
-mod fragment;
-mod ident;
-mod nodes;
-mod parser;
-mod script;
-mod stray;
-mod widget;
+pub mod diagnostics;
+pub mod nodes;
+pub mod parser;
 
 pub use nodes::*;
 pub use parser::Parser;

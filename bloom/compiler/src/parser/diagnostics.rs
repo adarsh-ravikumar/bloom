@@ -8,25 +8,6 @@ use crate::{
 };
 
 impl<'a> Parser<'a> {
-    pub fn synchronize(&mut self, set: &[&'static str]) {
-        loop {
-            if self.peek(0) == 0 {
-                return;
-            }
-
-            let pos = self.pos;
-
-            for &item in set {
-                if self.eat(item) {
-                    self.restore(pos); // we restore, as we do not intend to eat the sync token
-                    return;
-                }
-            }
-
-            self.consume(1);
-        }
-    }
-
     fn reached_fatal_eof(&self) -> bool {
         // an unclosed expression or quoted attribute value is guaranteed to
         // exhaust the source and reach EOF. any diagnostics produced after
@@ -66,6 +47,26 @@ impl<'a> Parser<'a> {
                 "tag names must start with a letter or _ and can contain letters, numbers, $, _, and - only"
                     .into(),
             ],
+        })
+    }
+
+    pub fn emit_invalid_control_name(&mut self, start: usize, end: usize) {
+        if self.reached_fatal_eof() {
+            return;
+        }
+
+        self.diagnostics.push(Diagnostic {
+            severity: DiagnosticSeverity::Error,
+            class: DiagnosticClass::InvalidIdentifier(IdentType::Tag),
+            msg: "invalid control block name".into(),
+            location: Span::new(start, end),
+            labels: vec![Label {
+                span: Span::new(start, end),
+                msg: "invalid control block name".into(),
+                kind: LabelKind::Primary,
+                paranthesise: false,
+            }],
+            notes: vec!["valid control block are if, elif, else, each".into()],
         })
     }
 

@@ -1,105 +1,96 @@
-use crate::common::Span;
-
-#[derive(Debug, Clone)]
-pub struct Root {
-    pub fragment: Option<Fragment>,
-    pub script: Option<Script>,
-}
-
-#[derive(Debug, Clone)]
-pub struct Script {
-    pub open: Span,
-    pub source: String,
-    pub pre: Preprocess,
-}
-
-#[derive(Debug, Clone)]
-pub struct Preprocess {
-    pub events: Vec<String>,
-    pub commands: Vec<String>,
-    pub reactive: Vec<String>,
-}
+use crate::common::{Span, SpannedString};
 
 // Fragment
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Fragment {
     pub nodes: Vec<FragmentNode>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum FragmentNode {
     Widget(Widget),
     Parts(Parts),
-    Text(Span),
-    Expression(Span),
+    Text(String),
+    Expression(SpannedString),
     Control(Control),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Eq)]
+pub enum FragmentEnd {
+    Root,
+    Widget,
+    ControlEnd,
+    ControlCase,
+}
+
+// Parts
+#[derive(Debug)]
 pub enum Part {
-    Text(Span),
-    Expression(Span),
+    Text(String),
+    Expression(SpannedString),
 }
 pub type Parts = Vec<Part>;
 
 impl Part {
-    pub fn as_fragment(&self) -> FragmentNode {
+    pub fn as_fragment(self) -> FragmentNode {
         match self {
-            Self::Text(span) => FragmentNode::Text(*span),
-            Self::Expression(span) => FragmentNode::Expression(*span),
+            Self::Text(v) => FragmentNode::Text(v),
+            Self::Expression(v) => FragmentNode::Expression(v),
         }
     }
 }
 
-#[derive(Debug, Clone)]
+// Widget
+#[derive(Debug)]
 pub struct Widget {
-    pub name: Span,
+    pub name: SpannedString,
     pub attributes: Vec<Attribute>,
     pub fragment: Option<Fragment>,
     pub is_platform: bool,
 }
 
-#[derive(Debug, Clone)]
+// Control
+#[derive(Debug)]
 pub enum Control {
     If(IfControl),
     Each(EachControl),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct IfControl {
-    pub condition: Span,
+    pub condition: SpannedString,
     pub body: Fragment,
     pub elifs: Vec<ElifControl>,
     pub else_body: Option<Fragment>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ElifControl {
-    pub condition: Span,
+    pub condition: SpannedString,
     pub body: Fragment,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct EachControl {
-    pub expression: Span,
-    pub context: Span,
+    pub expression: SpannedString,
+    pub context: SpannedString,
     pub body: Fragment,
 }
 
 // Attribute
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Attribute {
-    pub name: Span,
+    pub name: SpannedString,
     pub value: AttributeValue,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum AttributeValue {
-    Expression(Span),
+    Expression(SpannedString),
     Parts(Parts),
     BindingAttribute {
-        bind_from: Span,
-        bind_to: Span,
+        bind_from: SpannedString,
+        bind_to: SpannedString,
         value: Option<Box<AttributeValue>>,
     },
     True,
