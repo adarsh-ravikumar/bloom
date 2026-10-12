@@ -60,15 +60,17 @@
       </button>
     </row>
 
-    <row>
-      <dropdown from={Format} value:format></dropdown>
-      <radio value:scale>
-        <option value={0.5}> 0.5x </option>
-        <option value={1}> 1x </option>
-        <option value={1.5}> 1.5x </option>
-        <option value={2}> 2x </option>
-      </radio>
-      <button on:click={exportImage}>Export</button>
-    </row>
+    <!--
+      <row>
+        <dropdown from={Format} value:format></dropdown>
+        <radio value:scale>
+          <option value={0.5}> 0.5x </option>
+          <option value={1}> 1x </option>
+          <option value={1.5}> 1.5x </option>
+          <option value={2}> 2x </option>
+        </radio>
+        <button on:click={exportImage}>Export</button>
+      </row>
+    -->
   </column>
 </panel>

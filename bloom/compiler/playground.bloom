@@ -1,15 +1,18 @@
 <script>
-  let count = 0;
+  export let count = 0;
   let otherCount = 9;
   let notAState = "definitely not a state";
 </script>
 
-<:div>
-  <:button>
+<column>
+  <button>
     Button!
-  </:button> 
-  <:p>
+  </button> 
+  <text>
     Hello World! {count + otherCount > 5 ? count : otherCount.chain.expression.here}
     It's a me - Mario!
-  </:p>
-</:div>
+  </text>
+  <text>
+    Some more text cuz why not
+  </text>
+</column>

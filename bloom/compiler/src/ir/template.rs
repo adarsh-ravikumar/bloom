@@ -48,14 +48,6 @@ pub enum IrNode {
     EndEachBlock { id: NodeId, parent: NodeId },
 }
 
-#[derive(Debug, Clone)]
-pub struct Expression {
-    pub source: String,
-    pub context_vars: Vec<String>,
-    pub global_uses: Vec<SymbolUse>,
-    pub context_uses: Vec<SymbolUse>,
-}
-
 fn sanitize_text(text: String) -> String {
     let mut san = Vec::new();
 

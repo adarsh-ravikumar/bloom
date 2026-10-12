@@ -1,0 +1,7 @@
+<script>
+  export let min: number = 0;
+  export let max: number = 100;
+  export let value: number;
+</script>
+
+<:input type="range" {min} {max} value:value = {0} class="slider" />

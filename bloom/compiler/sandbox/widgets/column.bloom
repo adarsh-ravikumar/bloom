@@ -1,0 +1,4 @@
+<:div class="column">
+  <button>wth bruv! you can't just do that!</button>
+  <slot />
+</:div>

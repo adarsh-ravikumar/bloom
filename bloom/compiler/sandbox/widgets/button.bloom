@@ -1,0 +1,9 @@
+<script>
+  #event
+  function click () : void {};
+</script>
+
+<:button>
+  <text> Hello! </text>
+  <slot />
+</:button>

@@ -1,0 +1,4 @@
+<:p>
+  <column> #cheeky </column>
+  <slot />
+</:p>

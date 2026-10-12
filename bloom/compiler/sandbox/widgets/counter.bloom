@@ -1,0 +1,11 @@
+<script>
+  let count: number = 0;
+</script>
+
+<column>
+  <button on:click={() => count ++}>
+    Click Me!
+  </button>
+
+  <text>Count is {count}</text>
+</column>

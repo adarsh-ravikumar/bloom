@@ -1,5 +1,7 @@
 mod script;
-mod template;
+// mod template;
 
-pub use script::{SemanticAnalyzer, Symbol, SymbolUse};
-pub use template::{Expression, IrNode, TemplateIr};
+pub use script::{
+    Alias, Enum, Interface, NamedType, SemanticAnalyzer, TypeAnnotation,
+};
+// pub use template::{Expression, IrNode, TemplateIr};

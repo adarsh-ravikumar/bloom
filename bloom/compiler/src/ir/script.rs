@@ -1,6 +1,12 @@
 use std::collections::HashMap;
 
-use crate::ir::template::Expression;
+use crate::{
+    common::{ERRONEOUS_SPAN, Span, SpannedString},
+    module::{
+        Expression, Function, Module, ModuleMemberType, SymbolUse, Variable,
+    },
+};
+
 use oxc_allocator::{Allocator as OxcAllocator, Vec as OxcVec};
 
 use oxc_ast::ast::{Declaration, VariableDeclarationKind};
@@ -39,44 +45,48 @@ use oxc_span::{GetSpan, SourceType, Span as OxcSpan};
 pub struct SemanticAnalyzer {
     pub context_tree: Vec<SymbolTable>,
     pub uses: Vec<SymbolUse>,
+    pub current_source: String,
 }
 
 #[derive(Debug, Clone)]
 pub enum TypeAnnotation {
-    Number(OxcSpan), // 64-bit IEEE-754
-    String(OxcSpan), // UTF-8
-    Boolean(OxcSpan),
+    Number(Span), // 64-bit IEEE-754
+    String(Span), // UTF-8
+    Boolean(Span),
 
-    Array((OxcSpan, Box<TypeAnnotation>)),
-    Tuple((OxcSpan, Vec<TypeAnnotation>)),
-    NamedTuple((OxcSpan, Vec<(String, TypeAnnotation)>)),
+    Void(Span),
+    Array((Span, Box<TypeAnnotation>)),
+    Tuple((Span, Vec<TypeAnnotation>)),
+    NamedTuple((Span, Vec<(String, TypeAnnotation)>)),
 
     // this can occur only inside the NamedTuple array, but is a part of
     // TypeAnnotation to preserve the simplicity
-    NamedTupleMember((OxcSpan, String, Box<TypeAnnotation>)),
+    NamedTupleMember((Span, String, Box<TypeAnnotation>)),
 
-    Union((OxcSpan, Vec<TypeAnnotation>)),
-    Literal((OxcSpan, Literal)),
+    Union((Span, Vec<TypeAnnotation>)),
+    Literal((Span, Literal)),
 
-    TypeReference((OxcSpan, String)),
+    TypeReference((Span, String)),
 
-    Disallowed((OxcSpan, &'static str)),
+    Disallowed((Span, &'static str)),
+}
+
+impl Default for TypeAnnotation {
+    fn default() -> Self {
+        Self::Disallowed((ERRONEOUS_SPAN, ""))
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum NamedType {
-    Alias {
-        type_annotation: TypeAnnotation,
-        generics: Option<OxcSpan>,
-    },
-
-    Interface {
-        fields: Vec<(Option<String>, TypeAnnotation)>,
-        generics: Option<OxcSpan>,
-    },
-
-    Enum(Vec<(String, Option<EnumValue>)>),
+    Alias(Alias),
+    Interface(Interface),
+    Enum(Enum),
 }
+
+pub type Alias = TypeAnnotation;
+pub type Interface = Vec<(Option<String>, TypeAnnotation)>;
+pub type Enum = Vec<(String, Option<EnumValue>)>;
 
 #[derive(Debug, Clone)]
 pub enum Literal {
@@ -94,24 +104,8 @@ pub enum EnumValue {
 
 #[derive(Debug, Clone)]
 pub enum Symbol {
-    Variable {
-        span: OxcSpan,
-        type_annotation: Option<TypeAnnotation>,
-        is_let: bool,
-        is_state: bool,
-        is_export: bool,
-        init: Option<OxcSpan>,
-    },
-
-    Function {
-        name: String,
-        context: usize,
-        body: Option<OxcSpan>,
-        return_type: Option<TypeAnnotation>,
-        // bloom does NOT allow for generics.
-        // store here if any for diagnostics
-        generics: Option<OxcSpan>,
-    },
+    Variable(Variable),
+    Function(Function),
 
     Parameter {
         span: OxcSpan,
@@ -127,12 +121,6 @@ pub enum Symbol {
     Type(NamedType),
 }
 
-#[derive(Debug, Clone)]
-pub struct SymbolUse {
-    pub span: OxcSpan,
-    pub context: usize,
-}
-
 #[derive(Debug)]
 pub struct SymbolTable {
     pub symbols: HashMap<String, Symbol>,
@@ -146,6 +134,7 @@ where
 {
     pub fn new() -> Self {
         Self {
+            current_source: String::new(),
             context_tree: Vec::new(),
             uses: Vec::new(),
         }
@@ -155,7 +144,7 @@ where
         source: &'a str,
         oxc_allocator: &'a OxcAllocator,
     ) -> OxcVec<'b, OxcStatement<'b>> {
-        let parser = Parser::new(oxc_allocator, source, SourceType::ts());
+        let parser = Parser::new(oxc_allocator, &source, SourceType::ts());
 
         let result = parser.parse();
 
@@ -241,7 +230,10 @@ where
                  */
 
                 uses.push(SymbolUse {
-                    span: expr.span,
+                    r#use: SpannedString {
+                        span: Span::from(expr.span),
+                        string: self.view_span(expr.span),
+                    },
                     context,
                 });
             }
@@ -442,15 +434,15 @@ where
                         self.insert_in_context(
                             new_context,
                             id.name.to_string(),
-                            Symbol::Function {
+                            Symbol::Function(Function {
                                 name: id.name.to_string(),
                                 context: new_context,
-                                body: Some(body),
+                                body: Some(self.view_span(body)),
                                 // we needn't care about the type annotation and
                                 // generics for a function expression.
                                 return_type: None,
                                 generics: None,
-                            },
+                            }),
                         );
                     }
                 }
@@ -761,7 +753,10 @@ where
 
                             uses.push(
                                 SymbolUse {
-                                    span: ident.span,
+                                    r#use: SpannedString {
+                                        span: Span::from(ident.span),
+                                        string: self.view_span(ident.span)
+                                    },
                                     context
                                 }
                             );
@@ -796,7 +791,10 @@ where
                  */
 
                 uses.push(SymbolUse {
-                    span: target.span,
+                    r#use: SpannedString {
+                        span: Span::from(target.span),
+                        string: self.view_span(target.span),
+                    },
                     context,
                 });
             }
@@ -1407,7 +1405,7 @@ where
                 };
 
                 let generics = if let Some(generic) = &stmt.type_parameters {
-                    Some(generic.span)
+                    Some(Span::from(generic.span))
                 } else {
                     None
                 };
@@ -1416,13 +1414,17 @@ where
                     self.insert_in_context(
                         context,
                         id.name.to_string(),
-                        Symbol::Function {
+                        Symbol::Function(Function {
                             name: id.name.to_string(),
                             context: context,
-                            body,
+                            body: if let Some(b) = body {
+                                Some(self.view_span(b))
+                            } else {
+                                None
+                            },
                             return_type,
                             generics,
-                        },
+                        }),
                     );
                 }
             }
@@ -1439,18 +1441,16 @@ where
                     self.type_annotation(&stmt.type_annotation);
 
                 let generics = if let Some(generic) = &stmt.type_parameters {
-                    Some(generic.span)
+                    Some(Span::from(generic.span))
                 } else {
                     None
                 };
 
+                //TODO: report disallowed type_parameters (generics)
                 self.insert_in_context(
                     context,
                     stmt.id.name.to_string(),
-                    Symbol::Type(NamedType::Alias {
-                        type_annotation,
-                        generics,
-                    }),
+                    Symbol::Type(NamedType::Alias(type_annotation)),
                 );
             }
 
@@ -1463,7 +1463,7 @@ where
                  */
 
                 let generics = if let Some(generic) = &stmt.type_parameters {
-                    Some(generic.span)
+                    Some(Span::from(generic.span))
                 } else {
                     None
                 };
@@ -1479,7 +1479,7 @@ where
                         OxcTSSignature::TSIndexSignature(sig) => fields.push((
                             None,
                             TypeAnnotation::Disallowed((
-                                sig.span,
+                                Span::from(sig.span),
                                 "index signature",
                             )),
                         )),
@@ -1498,7 +1498,7 @@ where
                                         fields.push((
                                             None,
                                             TypeAnnotation::Disallowed((
-                                                ident.span,
+                                                Span::from(ident.span),
                                                 "type annotation required",
                                             )),
                                         ))
@@ -1508,7 +1508,7 @@ where
                                 _ => fields.push((
                                     None,
                                     TypeAnnotation::Disallowed((
-                                        sig.span,
+                                        Span::from(sig.span),
                                         "only static identifiers are allowed",
                                     )),
                                 )),
@@ -1519,7 +1519,7 @@ where
                             fields.push((
                                 None,
                                 TypeAnnotation::Disallowed((
-                                    sig.span,
+                                    Span::from(sig.span),
                                     "index signature",
                                 )),
                             ))
@@ -1530,7 +1530,7 @@ where
                         ) => fields.push((
                             None,
                             TypeAnnotation::Disallowed((
-                                sig.span,
+                                Span::from(sig.span),
                                 "index signature",
                             )),
                         )),
@@ -1539,7 +1539,7 @@ where
                             fields.push((
                                 None,
                                 TypeAnnotation::Disallowed((
-                                    sig.span,
+                                    Span::from(sig.span),
                                     "index signature",
                                 )),
                             ))
@@ -1547,10 +1547,11 @@ where
                     }
                 }
 
+                //TODO: report disallowed type_parameters (generics)
                 self.insert_in_context(
                     context,
                     stmt.id.name.to_string(),
-                    Symbol::Type(NamedType::Interface { fields, generics }),
+                    Symbol::Type(NamedType::Interface(fields)),
                 );
             }
 
@@ -1662,21 +1663,21 @@ where
 
             let init = if let Some(init) = &decl.init {
                 self.expression(context, init, uses);
-                Some(init.span())
+                Some(Span::from(init.span()))
             } else {
                 None
             };
 
             self.binding(
                 context,
-                Symbol::Variable {
-                    span: decl.span,
+                Symbol::Variable(Variable {
+                    span: Span::from(decl.span),
                     type_annotation: r#type,
                     is_state: false,
                     is_let,
                     init,
                     is_export,
-                },
+                }),
                 &decl.id,
                 uses,
             );
@@ -1689,15 +1690,19 @@ where
     ) -> TypeAnnotation {
         match annotation {
             OxcTSType::TSBooleanKeyword(_type) => {
-                TypeAnnotation::Boolean(_type.span)
+                TypeAnnotation::Boolean(Span::from(_type.span))
             }
 
             OxcTSType::TSNumberKeyword(_type) => {
-                TypeAnnotation::Number(_type.span)
+                TypeAnnotation::Number(Span::from(_type.span))
             }
 
             OxcTSType::TSStringKeyword(_type) => {
-                TypeAnnotation::String(_type.span)
+                TypeAnnotation::String(Span::from(_type.span))
+            }
+
+            OxcTSType::TSVoidKeyword(_type) => {
+                TypeAnnotation::Void(Span::from(_type.span))
             }
 
             OxcTSType::TSArrayType(_type) => {
@@ -1707,40 +1712,46 @@ where
                  */
 
                 TypeAnnotation::Array((
-                    _type.span,
+                    Span::from(_type.span),
                     Box::new(self.type_annotation(&_type.element_type)),
                 ))
             }
 
             OxcTSType::TSLiteralType(_type) => match &_type.literal {
                 OxcTSLiteral::BooleanLiteral(lit) => TypeAnnotation::Literal((
-                    _type.span,
+                    Span::from(_type.span),
                     Literal::Boolean(lit.value),
                 )),
 
                 OxcTSLiteral::NumericLiteral(lit) => TypeAnnotation::Literal((
-                    _type.span,
+                    Span::from(_type.span),
                     Literal::Number(lit.value),
                 )),
 
                 OxcTSLiteral::StringLiteral(lit) => TypeAnnotation::Literal((
-                    _type.span,
+                    Span::from(_type.span),
                     Literal::String(lit.value.to_string()),
                 )),
 
                 OxcTSLiteral::BigIntLiteral(_type) => {
-                    TypeAnnotation::Disallowed((_type.span, "bigint literal"))
+                    TypeAnnotation::Disallowed((
+                        Span::from(_type.span),
+                        "bigint literal",
+                    ))
                 }
 
                 OxcTSLiteral::UnaryExpression(_type) => {
                     TypeAnnotation::Disallowed((
-                        _type.span,
+                        Span::from(_type.span),
                         "unary expression literal",
                     ))
                 }
 
                 OxcTSLiteral::TemplateLiteral(_type) => {
-                    TypeAnnotation::Disallowed((_type.span, "template literal"))
+                    TypeAnnotation::Disallowed((
+                        Span::from(_type.span),
+                        "template literal",
+                    ))
                 }
             },
 
@@ -1759,17 +1770,23 @@ where
                      * : oxc_ast::ast::TSType<'a> variants
                      */
                     OxcTSTupleElement::TSOptionalType(_type) => {
-                        TypeAnnotation::Disallowed((_type.span, "optional"))
+                        TypeAnnotation::Disallowed((
+                            Span::from(_type.span),
+                            "optional",
+                        ))
                     }
 
                     OxcTSTupleElement::TSRestType(_type) => {
-                        TypeAnnotation::Disallowed((_type.span, "rest"))
+                        TypeAnnotation::Disallowed((
+                            Span::from(_type.span),
+                            "rest",
+                        ))
                     }
 
                     _ => {
                         if let Some(t) = _type.element_type.as_ts_type() {
                             TypeAnnotation::NamedTupleMember((
-                                _type.span,
+                                Span::from(_type.span),
                                 _type.label.to_string(),
                                 Box::new(self.type_annotation(t)),
                             ))
@@ -1801,13 +1818,17 @@ where
                          */
                         OxcTSTupleElement::TSOptionalType(_type) => {
                             types.push(TypeAnnotation::Disallowed((
-                                _type.span, "optional",
+                                Span::from(_type.span),
+                                "optional",
                             )))
                         }
 
-                        OxcTSTupleElement::TSRestType(_type) => types.push(
-                            TypeAnnotation::Disallowed((_type.span, "rest")),
-                        ),
+                        OxcTSTupleElement::TSRestType(_type) => {
+                            types.push(TypeAnnotation::Disallowed((
+                                Span::from(_type.span),
+                                "rest",
+                            )))
+                        }
 
                         _ => {
                             if let Some(t) = t.as_ts_type() {
@@ -1821,7 +1842,7 @@ where
                     }
                 }
 
-                TypeAnnotation::Tuple((_type.span, types))
+                TypeAnnotation::Tuple((Span::from(_type.span), types))
             }
 
             OxcTSType::TSTypeReference(_type) => {
@@ -1834,10 +1855,13 @@ where
                 match &_type.type_name {
                     OxcTSTypeName::IdentifierReference(ident) => {
                         if _type.type_arguments.is_some() {
-                            TypeAnnotation::Disallowed((_type.span, "generics"))
+                            TypeAnnotation::Disallowed((
+                                Span::from(_type.span),
+                                "generics",
+                            ))
                         } else {
                             TypeAnnotation::TypeReference((
-                                _type.span,
+                                Span::from(_type.span),
                                 ident.name.to_string(),
                             ))
                         }
@@ -1845,14 +1869,14 @@ where
 
                     OxcTSTypeName::QualifiedName(_) => {
                         TypeAnnotation::Disallowed((
-                            _type.span,
+                            Span::from(_type.span),
                             "qualified name",
                         ))
                     }
 
                     OxcTSTypeName::ThisExpression(_) => {
                         TypeAnnotation::Disallowed((
-                            _type.span,
+                            Span::from(_type.span),
                             "this expression",
                         ))
                     }
@@ -1871,7 +1895,7 @@ where
                     types.push(self.type_annotation(t))
                 }
 
-                TypeAnnotation::Union((_type.span, types))
+                TypeAnnotation::Union((Span::from(_type.span), types))
             }
 
             OxcTSType::TSParenthesizedType(_type) => {
@@ -1883,113 +1907,122 @@ where
                 self.type_annotation(&_type.type_annotation)
             }
 
-            OxcTSType::TSTypeLiteral(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "type literal"))
-            }
+            OxcTSType::TSTypeLiteral(_type) => TypeAnnotation::Disallowed((
+                Span::from(_type.span),
+                "type literal",
+            )),
 
             OxcTSType::TSAnyKeyword(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "any"))
+                TypeAnnotation::Disallowed((Span::from(_type.span), "any"))
             }
 
             OxcTSType::TSBigIntKeyword(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "bigint"))
+                TypeAnnotation::Disallowed((Span::from(_type.span), "bigint"))
             }
 
-            OxcTSType::TSIntrinsicKeyword(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "intrinsic"))
-            }
+            OxcTSType::TSIntrinsicKeyword(_type) => TypeAnnotation::Disallowed(
+                (Span::from(_type.span), "intrinsic"),
+            ),
 
             OxcTSType::TSNeverKeyword(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "never"))
+                TypeAnnotation::Disallowed((Span::from(_type.span), "never"))
             }
 
             OxcTSType::TSNullKeyword(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "null"))
+                TypeAnnotation::Disallowed((Span::from(_type.span), "null"))
             }
 
             OxcTSType::TSObjectKeyword(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "object"))
+                TypeAnnotation::Disallowed((Span::from(_type.span), "object"))
             }
 
             OxcTSType::TSSymbolKeyword(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "symbol"))
+                TypeAnnotation::Disallowed((Span::from(_type.span), "symbol"))
             }
 
-            OxcTSType::TSUndefinedKeyword(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "undefined"))
-            }
+            OxcTSType::TSUndefinedKeyword(_type) => TypeAnnotation::Disallowed(
+                (Span::from(_type.span), "undefined"),
+            ),
 
             OxcTSType::TSUnknownKeyword(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "unknown"))
+                TypeAnnotation::Disallowed((Span::from(_type.span), "unknown"))
             }
 
-            OxcTSType::TSVoidKeyword(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "void"))
-            }
+            OxcTSType::TSConditionalType(_type) => TypeAnnotation::Disallowed(
+                (Span::from(_type.span), "conditional"),
+            ),
 
-            OxcTSType::TSConditionalType(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "conditional"))
-            }
-
-            OxcTSType::TSConstructorType(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "constructor"))
-            }
+            OxcTSType::TSConstructorType(_type) => TypeAnnotation::Disallowed(
+                (Span::from(_type.span), "constructor"),
+            ),
 
             OxcTSType::TSFunctionType(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "function"))
+                TypeAnnotation::Disallowed((Span::from(_type.span), "function"))
             }
 
             OxcTSType::TSImportType(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "import"))
+                TypeAnnotation::Disallowed((Span::from(_type.span), "import"))
             }
 
             OxcTSType::TSIndexedAccessType(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "indexed access"))
+                TypeAnnotation::Disallowed((
+                    Span::from(_type.span),
+                    "indexed access",
+                ))
             }
 
             OxcTSType::TSInferType(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "infer"))
+                TypeAnnotation::Disallowed((Span::from(_type.span), "infer"))
             }
 
-            OxcTSType::TSIntersectionType(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "intersection"))
-            }
+            OxcTSType::TSIntersectionType(_type) => TypeAnnotation::Disallowed(
+                (Span::from(_type.span), "intersection"),
+            ),
 
             OxcTSType::TSMappedType(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "mapped"))
+                TypeAnnotation::Disallowed((Span::from(_type.span), "mapped"))
             }
 
             OxcTSType::TSTemplateLiteralType(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "template literal"))
+                TypeAnnotation::Disallowed((
+                    Span::from(_type.span),
+                    "template literal",
+                ))
             }
 
             OxcTSType::TSThisType(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "this"))
+                TypeAnnotation::Disallowed((Span::from(_type.span), "this"))
             }
 
-            OxcTSType::TSTypeOperatorType(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "type operator"))
-            }
+            OxcTSType::TSTypeOperatorType(_type) => TypeAnnotation::Disallowed(
+                (Span::from(_type.span), "type operator"),
+            ),
 
-            OxcTSType::TSTypePredicate(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "type predicate"))
-            }
+            OxcTSType::TSTypePredicate(_type) => TypeAnnotation::Disallowed((
+                Span::from(_type.span),
+                "type predicate",
+            )),
 
-            OxcTSType::TSTypeQuery(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "type query"))
-            }
+            OxcTSType::TSTypeQuery(_type) => TypeAnnotation::Disallowed((
+                Span::from(_type.span),
+                "type query",
+            )),
 
-            OxcTSType::JSDocNullableType(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "JS Doc nullable"))
-            }
+            OxcTSType::JSDocNullableType(_type) => TypeAnnotation::Disallowed(
+                (Span::from(_type.span), "JS Doc nullable"),
+            ),
 
             OxcTSType::JSDocNonNullableType(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "JS Doc non-nullable"))
+                TypeAnnotation::Disallowed((
+                    Span::from(_type.span),
+                    "JS Doc non-nullable",
+                ))
             }
 
-            OxcTSType::JSDocUnknownType(_type) => {
-                TypeAnnotation::Disallowed((_type.span, "JS Doc unknown"))
-            }
+            OxcTSType::JSDocUnknownType(_type) => TypeAnnotation::Disallowed((
+                Span::from(_type.span),
+                "JS Doc unknown",
+            )),
         }
     }
 
@@ -2004,11 +2037,11 @@ where
         }
     }
 
-    pub fn view_span(&self, source: &'a str, span: OxcSpan) -> &'b str {
-        &source[span.start as usize..span.end as usize]
+    pub fn view_span(&self, span: OxcSpan) -> String {
+        self.current_source[span.start as usize..span.end as usize].to_string()
     }
 
-    pub fn is_global_symbol(&self, symbol: &str, context: usize) -> bool {
+    pub fn is_global_symbol(&self, symbol: &String, context: usize) -> bool {
         let ctxt = self.context_tree.get(context).unwrap();
 
         if ctxt.symbols.contains_key(symbol) {
@@ -2021,12 +2054,14 @@ where
             }
         }
     }
+
     pub fn analyze_script(
         &mut self,
-        script: &'a str,
+        script: &String,
         oxc_allocator: &'a OxcAllocator,
-    ) {
+    ) -> Vec<SymbolUse> {
         let body = Self::parse(script, oxc_allocator);
+        self.current_source = script.clone();
 
         let global_context = self.create_context(0);
 
@@ -2037,26 +2072,85 @@ where
         // collect global uses
         let global_uses = uses
             .iter()
-            .filter(|u| {
-                self.is_global_symbol(
-                    self.view_span(&script, u.span),
-                    u.context,
-                )
-            })
+            .filter(|u| self.is_global_symbol(&u.r#use.string, u.context))
             .cloned()
             .collect();
 
-        self.uses = global_uses;
+        global_uses
     }
 
-    pub fn analyze(
-        &mut self,
-        oxc_allocator: &'a OxcAllocator,
-        script: &'a str,
-        expressions: &'a mut Vec<Expression>,
-    ) {
-        self.analyze_script(script, oxc_allocator);
-        self.analyze_expressions(expressions, oxc_allocator);
+    pub fn analyze(&mut self, module: &'a mut Module) {
+        let oxc_allocator = OxcAllocator::new();
+
+        // this gives uses in the script
+        module.symbol_uses =
+            self.analyze_script(&module.script.1, &oxc_allocator);
+
+        // this gives uses in expressions
+        self.analyze_expressions(&mut module.expressions, &oxc_allocator);
+
+        // we need to now build the Members map.
+        let global_context = &mut self.context_tree.get_mut(0).unwrap().symbols;
+
+        for (name, symbol) in global_context.iter_mut() {
+            match symbol {
+                Symbol::Variable(var) => {
+                    let var = if var.is_state && var.is_export {
+                        ModuleMemberType::PublicState(var.clone())
+                    } else if var.is_state {
+                        ModuleMemberType::PrivateState(var.clone())
+                    } else if var.is_export {
+                        ModuleMemberType::PublicVariable(var.clone())
+                    } else {
+                        ModuleMemberType::PrivateVariable(var.clone())
+                    };
+
+                    module.metadata.insert(name.clone(), var);
+                }
+
+                Symbol::Function(func) => {
+                    if let Some(f) = module.metadata.get_mut(&func.name) {
+                        match f {
+                            ModuleMemberType::Event(e) => {
+                                *e = Some(func.clone())
+                            }
+                            ModuleMemberType::Command(e) => {
+                                *e = Some(func.clone())
+                            }
+                            ModuleMemberType::Reactive(e) => {
+                                *e = Some(func.clone())
+                            }
+                            ModuleMemberType::Function(e) => {
+                                *e = Some(func.clone())
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+
+                Symbol::Type(t) => {
+                    let t = match t {
+                        NamedType::Alias(annotation) => {
+                            ModuleMemberType::Alias(std::mem::take(annotation))
+                        }
+
+                        NamedType::Interface(interface) => {
+                            ModuleMemberType::Interface(std::mem::take(
+                                interface,
+                            ))
+                        }
+
+                        NamedType::Enum(r#enum) => {
+                            ModuleMemberType::Enum(std::mem::take(r#enum))
+                        }
+                    };
+
+                    module.metadata.insert(name.clone(), t);
+                }
+
+                _ => unreachable!(),
+            }
+        }
     }
 
     pub fn analyze_expressions(
@@ -2065,7 +2159,9 @@ where
         oxc_allocator: &'a OxcAllocator,
     ) {
         for expr in expressions {
-            let body = Self::parse(&expr.source, oxc_allocator);
+            self.current_source = expr.source.string.clone();
+
+            let body = Self::parse(&expr.source.string, oxc_allocator);
 
             let mut uses = Vec::new();
 
@@ -2076,24 +2172,21 @@ where
 
             // collect global and context uses
             for _use in uses {
-                let use_name =
-                    self.view_span(&expr.source, _use.span).to_string();
+                let use_name = &_use.r#use.string;
 
                 if expr.context_vars.contains(&use_name) {
                     context_uses.push(_use);
                 } else if self.is_global_symbol(&use_name, _use.context) {
-                    if let Some(Symbol::Variable {
-                        is_state, is_let, ..
-                    }) = self
+                    if let Some(Symbol::Variable(v)) = self
                         .context_tree
                         .get_mut(0)
                         .unwrap()
                         .symbols
-                        .get_mut(&use_name)
+                        .get_mut(use_name)
                     {
                         // if a variable occurs in the template, it must be made into a state
                         // but only if the variable itself is defined using `let` syntax
-                        *is_state = *is_let;
+                        v.is_state = v.is_let;
                     }
 
                     global_uses.push(_use);
