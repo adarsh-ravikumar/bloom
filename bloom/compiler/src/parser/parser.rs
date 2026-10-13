@@ -562,7 +562,7 @@ impl<'a> Parser<'a> {
 
                 self.module.expressions.push(Expression::new(expr.clone()));
 
-                attributes.push(Attribute {
+                attributes.push(Attribute::Regular {
                     name: expr.clone(),
                     value: AttributeValue::Expression(expr),
                 });
@@ -608,7 +608,7 @@ impl<'a> Parser<'a> {
                 let value = if self.eat("=") {
                     // if there is a binding value, we consume it.
                     if let Some(v) = self.parse_attribute_value() {
-                        Some(Box::new(v))
+                        Some(v)
                     } else {
                         // invalid value
                         // diagnostics would have already been pushed. do nothing here.
@@ -618,13 +618,10 @@ impl<'a> Parser<'a> {
                     None
                 };
 
-                attributes.push(Attribute {
-                    name,
-                    value: AttributeValue::BindingAttribute {
-                        bind_from,
-                        bind_to,
-                        value,
-                    },
+                attributes.push(Attribute::Binding {
+                    bind_from,
+                    bind_to,
+                    value,
                 });
 
                 self.consume_whitespace();
@@ -633,7 +630,7 @@ impl<'a> Parser<'a> {
 
             // boolean
             if !self.eat("=") {
-                attributes.push(Attribute {
+                attributes.push(Attribute::Regular {
                     name,
                     value: AttributeValue::True,
                 });
@@ -645,7 +642,7 @@ impl<'a> Parser<'a> {
             // value
             let value = self.parse_attribute_value();
             if let Some(value) = value {
-                attributes.push(Attribute { name, value });
+                attributes.push(Attribute::Regular { name, value });
             } else {
                 // invalid value
                 // diagnostics would have already been pushed. do nothing here.
@@ -697,9 +694,9 @@ impl<'a> Parser<'a> {
                     self.last_closed_tag = closing_name.span;
 
                     // we have found a match. now, we can safely pop all the tags
-                    // we pop until we hit i = 1, which means the tag at the top
+                    // we pop until we hit i = 0, which means the tag at the top
                     // is the currently matched tag
-                    while i > 1 {
+                    while i >= 1 {
                         self.open_tags.pop();
                         i -= 1;
                     }
@@ -834,7 +831,6 @@ impl<'a> Parser<'a> {
         if candidate_exists {
             // we have found a match. we can now report the unclosed control block,
             // pop it, and restore the cursor
-            println!("closing_name: {}", self.src.view_span(closing_name));
             let open = self.open_controls.pop().unwrap();
             self.emit_unclosed_control(open, closing_name);
             self.restore(restore_pos);

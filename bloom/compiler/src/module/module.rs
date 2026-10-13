@@ -1,9 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::{
+    analysis::{Alias, Enum, Interface, ScriptAnalyzer, TypeAnnotation},
     common::{ERRONEOUS_SPAN, Source, Span, SpannedString},
     diagnostic::DiagnosticRenderer,
-    ir::{Alias, Enum, Interface, NamedType, SemanticAnalyzer, TypeAnnotation},
     module::ModuleRegistry,
     parser::{Fragment, Parser},
 };
@@ -133,7 +133,7 @@ impl Module {
         }
 
         // script
-        let mut analyzer = SemanticAnalyzer::new();
+        let mut analyzer = ScriptAnalyzer::new();
         analyzer.analyze(&mut module);
 
         module.display();

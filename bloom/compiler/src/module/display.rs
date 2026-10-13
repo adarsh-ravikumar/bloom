@@ -1,7 +1,7 @@
 use crate::{
     module::Module,
     parser::{
-        Widget,
+        Attribute, Widget,
         nodes::{AttributeValue, Control, Fragment, FragmentNode, Part},
     },
 };
@@ -28,19 +28,6 @@ impl Module {
         }
     }
 
-    fn display_attribute_value(&self, value: &AttributeValue, indent: &str) {
-        match value {
-            AttributeValue::True => {}
-            AttributeValue::Expression(expr) => {
-                println!("{:?}", expr.string);
-            }
-            AttributeValue::Parts(parts) => {
-                self.display_parts(parts, indent);
-            }
-            AttributeValue::BindingAttribute { .. } => {}
-        }
-    }
-
     fn display_attributes(&self, elem: &Widget, indent: &str) {
         print!("{indent}attribs: [");
 
@@ -52,26 +39,33 @@ impl Module {
         println!();
 
         for attrib in &elem.attributes {
-            let name = &attrib.name.string;
+            match attrib {
+                Attribute::Regular { name, value } => {
+                    let name = &name.string;
 
-            match &attrib.value {
-                AttributeValue::True => {
-                    println!("{indent}   {name},");
+                    match value {
+                        AttributeValue::True => {
+                            println!("{indent}   {name},");
+                        }
+
+                        AttributeValue::Expression(expr) => {
+                            println!("{indent}   {name}: {}", expr.string);
+                        }
+
+                        AttributeValue::Parts(parts) => {
+                            println!("{indent}   {name}:");
+                            self.display_parts(
+                                parts,
+                                &format!("{indent}      "),
+                            );
+                        }
+                    }
                 }
 
-                AttributeValue::Expression(expr) => {
-                    println!("{indent}   {name}: {}", expr.string);
-                }
-
-                AttributeValue::Parts(parts) => {
-                    println!("{indent}   {name}:");
-                    self.display_parts(parts, &format!("{indent}      "));
-                }
-
-                AttributeValue::BindingAttribute {
-                    value,
+                Attribute::Binding {
                     bind_from,
                     bind_to,
+                    value,
                 } => {
                     print!(
                         "{indent}   {} -> {}",
@@ -79,7 +73,7 @@ impl Module {
                     );
 
                     if let Some(value) = value {
-                        match &**value {
+                        match value {
                             AttributeValue::Expression(expr) => {
                                 println!(" = {}", expr.string);
                             }

@@ -79,19 +79,22 @@ pub struct EachControl {
 
 // Attribute
 #[derive(Debug)]
-pub struct Attribute {
-    pub name: SpannedString,
-    pub value: AttributeValue,
+pub enum Attribute {
+    Regular {
+        name: SpannedString,
+        value: AttributeValue,
+    },
+
+    Binding {
+        bind_from: SpannedString,
+        bind_to: SpannedString,
+        value: Option<AttributeValue>,
+    },
 }
 
 #[derive(Debug)]
 pub enum AttributeValue {
     Expression(SpannedString),
     Parts(Parts),
-    BindingAttribute {
-        bind_from: SpannedString,
-        bind_to: SpannedString,
-        value: Option<Box<AttributeValue>>,
-    },
     True,
 }

@@ -1,10 +1,10 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, hash_map::Keys};
 
 use crate::module::{Module, ModuleMemberType, ModuleMetadata, ModuleType};
 
 #[derive(Debug)]
 pub struct ModuleRegistry {
-    pub lookup: HashMap<String, usize>,
+    lookup: HashMap<String, usize>,
     modules: Vec<Module>,
 }
 
@@ -21,15 +21,46 @@ impl<'a> ModuleRegistry {
         self.modules.push(module);
     }
 
-    pub fn lookup(
-        &mut self,
+    pub fn modules(&self) -> Keys<String, usize> {
+        self.lookup.keys()
+    }
+
+    pub fn get_module(&self, module_name: &String) -> Option<&Module> {
+        if let Some(id) = self.lookup.get(module_name) {
+            self.modules.get(*id)
+        } else {
+            None
+        }
+    }
+
+    pub fn lookup_attribute(
+        &self,
         module_name: String,
         attribute_name: String,
     ) -> Option<&ModuleMemberType> {
-        if let Some(id) = self.lookup.get(&module_name) {
-            self.modules.get(*id).unwrap().metadata.get(&attribute_name)
+        if let Some(module) = self.get_module(&module_name) {
+            module.metadata.get(&attribute_name)
         } else {
             None
+        }
+    }
+
+    pub fn analyze_dependencies(&self) {
+        let mut completed = HashMap::new();
+
+        for module in self.lookup.keys() {
+            let mut visited = HashSet::new();
+            visited.insert(module);
+
+            self.visit_module(module, visited, &mut completed);
+        }
+
+        for (module_name, count) in completed {
+            let module = &self.modules[*self.lookup.get(module_name).unwrap()];
+
+            if count == 0 && matches!(module.r#type, ModuleType::Widget) {
+                println!("Dead widget: {module_name}");
+            }
         }
     }
 
@@ -69,24 +100,5 @@ impl<'a> ModuleRegistry {
         }
 
         completed.insert(module_name, 0);
-    }
-
-    pub fn analyze_dependencies(&self) {
-        let mut completed = HashMap::new();
-
-        for module in self.lookup.keys() {
-            let mut visited = HashSet::new();
-            visited.insert(module);
-
-            self.visit_module(module, visited, &mut completed);
-        }
-
-        for (module_name, count) in completed {
-            let module = &self.modules[*self.lookup.get(module_name).unwrap()];
-
-            if count == 0 && matches!(module.r#type, ModuleType::Widget) {
-                println!("Dead widget: {module_name}");
-            }
-        }
     }
 }
