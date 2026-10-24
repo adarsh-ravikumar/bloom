@@ -1,4 +1,7 @@
+use oxc_allocator::Allocator as OxcAllocator;
+
 use crate::{
+    analysis::ScriptAnalyzer,
     common::{ERRONEOUS_SPAN, Source, Span, SpannedString},
     diagnostic::Diagnostic,
     module::{Expression, Module, ModuleMemberType, ModuleMetadata},
@@ -17,6 +20,8 @@ pub struct Parser<'a> {
     pub src: &'a Source,
     pub diagnostics: Vec<Diagnostic>,
 
+    oxc_allocator: OxcAllocator,
+    script_analyzer: ScriptAnalyzer,
     script: Option<ParsedScript>,
     module: &'a mut Module,
 
@@ -38,6 +43,8 @@ impl<'a> Parser<'a> {
             pos: 0,
             src,
 
+            oxc_allocator: OxcAllocator::new(),
+            script_analyzer: ScriptAnalyzer::new(),
             script: None,
             module,
 
@@ -62,7 +69,11 @@ impl<'a> Parser<'a> {
             script.open,
             self.preprocess_script(&mut metadata, script.source),
         );
+
         self.module.metadata = metadata;
+
+        self.script_analyzer
+            .analyze(&mut self.module, &self.oxc_allocator);
     }
 
     fn consume(&mut self, by: usize) {
@@ -212,11 +223,10 @@ impl<'a> Parser<'a> {
                         self.consume(1);
                         let expr = self.parse_embedded_expression("}");
 
-                        self.module
-                            .expressions
-                            .push(Expression::new(expr.clone()));
+                        self.module.expressions.push(expr.clone());
 
                         parts.push(Part::Expression(expr));
+
                         if !self.eat("}") {
                             self.emit_unclosed_expression(expr_start);
                         }
@@ -284,7 +294,17 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_embedded_expression(&mut self, delim: &str) -> SpannedString {
+    fn parse_embedded_expression(&mut self, delim: &str) -> Expression {
+        let source = self.identify_guest_boundary(delim);
+        let mut expr = Expression::new(source);
+
+        self.script_analyzer
+            .parse_expression(&mut expr, &self.oxc_allocator);
+
+        expr
+    }
+
+    fn identify_guest_boundary(&mut self, delim: &str) -> SpannedString {
         // goal of the method is to correctly find the end of a JS expression
         // expects that current pointer is at the start of the expr
         let mut num_braces = 0usize;
@@ -490,7 +510,7 @@ impl<'a> Parser<'a> {
                 self.emit_unclosed_expression(expr_start);
             }
 
-            self.module.expressions.push(Expression::new(expr.clone()));
+            self.module.expressions.push(expr.clone());
 
             return Some(AttributeValue::Expression(expr));
         }
@@ -522,7 +542,7 @@ impl<'a> Parser<'a> {
                     self.emit_unclosed_expression(expr_start);
                 }
 
-                self.module.expressions.push(Expression::new(expr.clone()));
+                self.module.expressions.push(expr.clone());
 
                 parts.push(Part::Expression(expr));
             }
@@ -560,10 +580,10 @@ impl<'a> Parser<'a> {
                     self.emit_unclosed_expression(expr_start);
                 }
 
-                self.module.expressions.push(Expression::new(expr.clone()));
+                self.module.expressions.push(expr.clone());
 
                 attributes.push(Attribute::Regular {
-                    name: expr.clone(),
+                    name: expr.source.clone(),
                     value: AttributeValue::Expression(expr),
                 });
 
@@ -581,29 +601,22 @@ impl<'a> Parser<'a> {
             self.consume_whitespace();
 
             // binding
-            let separator_pos = self.pos;
             if self.eat(":") {
                 self.consume_whitespace();
 
                 let bind_from = name;
 
-                let bind_to = self
-                    .parse_ident(&[b'=', b'{', b'>', b'"', b'\'', b':', b'/']);
+                // if we encounter whitespace, that means we are dealing with the `state:` case.
 
-                // bind to should be treated as an expression, as it should refer to a variable in the script
-                self.module
-                    .expressions
-                    .push(Expression::new(bind_to.clone()));
+                let bind_to =                 // bind to should be treated as an expression, as it should refer to a variable in the script
+                if self.eat(" ") || self.eat("\n") || self.eat("\t") {
+None
+                } else {
+Some(self
+                    .parse_ident(&[b'=', b'{', b'>', b'"', b'\'', b':', b'/']))
+                };
 
                 self.consume_whitespace();
-
-                let name = SpannedString {
-                    span: Span::new(bind_from.span.start, bind_to.span.end),
-                    string: format!(
-                        "{}:{}",
-                        &bind_from.string, &bind_to.string
-                    ),
-                };
 
                 let value = if self.eat("=") {
                     // if there is a binding value, we consume it.
@@ -1073,15 +1086,13 @@ impl<'a> Parser<'a> {
             self.emit_unclosed_expression(expr_start);
         }
 
-        if expr.span == ERRONEOUS_SPAN {
+        if expr.source.span == ERRONEOUS_SPAN {
             self.emit_expected_control_expression(control_start, "if");
         }
 
         if !self.eat("}") {
             self.emit_unclosed_control_header(control_start, "if"); // reaches fatal EOF
         }
-
-        self.module.expressions.push(Expression::new(expr.clone()));
 
         let fragment = self.parse_fragment(&[
             FragmentEnd::ControlCase,
@@ -1146,6 +1157,8 @@ impl<'a> Parser<'a> {
             }
         }
 
+        self.module.expressions.push(expr.clone());
+
         Control::If(IfControl {
             condition: expr,
             body: fragment,
@@ -1168,7 +1181,7 @@ impl<'a> Parser<'a> {
             self.emit_unclosed_expression(expr_start);
         }
 
-        if expr.span == ERRONEOUS_SPAN {
+        if expr.source.span == ERRONEOUS_SPAN {
             self.emit_expected_control_expression(case_start, "elif");
         }
 
@@ -1176,12 +1189,12 @@ impl<'a> Parser<'a> {
             self.emit_unclosed_control_header(case_start, "elif"); // reaches fatal EOF
         }
 
-        self.module.expressions.push(Expression::new(expr.clone()));
-
         let fragment = self.parse_fragment(&[
             FragmentEnd::ControlCase,
             FragmentEnd::ControlEnd,
         ]);
+
+        self.module.expressions.push(expr.clone());
 
         ElifControl {
             condition: expr,
@@ -1248,7 +1261,7 @@ impl<'a> Parser<'a> {
 
         let expr_start = self.pos;
 
-        let expression = self.parse_embedded_expression("}");
+        let expr = self.parse_embedded_expression("}");
 
         self.consume_whitespace();
 
@@ -1261,14 +1274,12 @@ impl<'a> Parser<'a> {
             self.emit_unclosed_control_header(control_start, "each"); // reaches fatal EOF
         }
 
-        self.module
-            .expressions
-            .push(Expression::new(expression.clone()));
-
         let body = self.parse_fragment(&[FragmentEnd::ControlEnd]);
 
+        self.module.expressions.push(expr.clone());
+
         Control::Each(EachControl {
-            expression,
+            expression: expr,
             context,
             body,
         })
@@ -1289,7 +1300,7 @@ impl<'a> Parser<'a> {
             self.emit_nested_script_tag(open, control);
         }
 
-        let source = self.parse_embedded_expression("</");
+        let source = self.identify_guest_boundary("</");
 
         self.consume_whitespace();
 

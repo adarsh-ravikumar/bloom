@@ -17,7 +17,7 @@ impl Module {
                 println!("{indent}text: {:?}", text);
             }
             Part::Expression(expr) => {
-                println!("{indent}expr: {:?}", expr.string);
+                println!("{indent}expr: {:?}", expr.source.string);
             }
         }
     }
@@ -49,7 +49,10 @@ impl Module {
                         }
 
                         AttributeValue::Expression(expr) => {
-                            println!("{indent}   {name}: {}", expr.string);
+                            println!(
+                                "{indent}   {name}: {}",
+                                expr.source.string
+                            );
                         }
 
                         AttributeValue::Parts(parts) => {
@@ -69,13 +72,18 @@ impl Module {
                 } => {
                     print!(
                         "{indent}   {} -> {}",
-                        bind_from.string, bind_to.string
+                        bind_from.string,
+                        if let Some(bind_to) = &bind_to {
+                            &bind_to.string
+                        } else {
+                            &bind_from.string
+                        }
                     );
 
                     if let Some(value) = value {
                         match value {
                             AttributeValue::Expression(expr) => {
-                                println!(" = {}", expr.string);
+                                println!(" = {}", expr.source.string);
                             }
                             AttributeValue::Parts(parts) => {
                                 println!(" =");
@@ -119,7 +127,7 @@ impl Module {
                 }
 
                 FragmentNode::Expression(expr) => {
-                    println!("{base_indent}expr: {:?}", expr.string);
+                    println!("{base_indent}expr: {:?}", expr.source.string);
                 }
 
                 FragmentNode::Parts(parts) => {
@@ -131,7 +139,7 @@ impl Module {
                     Control::If(if_block) => {
                         println!(
                             "{base_indent}if: {:?}",
-                            if_block.condition.string
+                            if_block.condition.source.string
                         );
 
                         self.display_fragment(&if_block.body, level + 1, '|');
@@ -139,7 +147,7 @@ impl Module {
                         for elif in &if_block.elifs {
                             println!(
                                 "{base_indent}elif: {:?}",
-                                elif.condition.string
+                                elif.condition.source.string
                             );
 
                             self.display_fragment(&elif.body, level + 1, '|');
@@ -155,7 +163,7 @@ impl Module {
                         println!("{base_indent}each:");
                         println!(
                             "{child_indent}expr: {:?}",
-                            each_block.expression.string
+                            each_block.expression.source.string
                         );
                         println!(
                             "{child_indent}context: {:?}",

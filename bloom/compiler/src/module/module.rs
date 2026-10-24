@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    analysis::{Alias, Enum, Interface, ScriptAnalyzer, TypeAnnotation},
+    analysis::{Alias, Enum, Interface, TypeAnnotation},
     common::{ERRONEOUS_SPAN, Source, Span, SpannedString},
     diagnostic::DiagnosticRenderer,
     module::ModuleRegistry,
@@ -19,23 +19,25 @@ pub struct State {
 pub struct SymbolUse {
     pub r#use: SpannedString,
     pub context: usize,
+    pub is_global_use: bool,
+    pub is_template_context_use: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Expression {
     pub source: SpannedString,
+    pub is_lone_identifier: bool,
     pub context_vars: Vec<String>,
-    pub global_uses: Vec<SymbolUse>,
-    pub context_uses: Vec<SymbolUse>,
+    pub symbol_uses: Vec<SymbolUse>,
 }
 
 impl Expression {
     pub fn new(source: SpannedString) -> Self {
         Self {
             source,
+            is_lone_identifier: false,
             context_vars: Vec::new(),
-            global_uses: Vec::new(),
-            context_uses: Vec::new(),
+            symbol_uses: Vec::new(),
         }
     }
 }
@@ -132,14 +134,9 @@ impl Module {
             return;
         }
 
-        // script
-        let mut analyzer = ScriptAnalyzer::new();
-        analyzer.analyze(&mut module);
-
         module.display();
 
-        // we move the metadata to the registry, as we can retrieve it from there
-        // if and when needed.
+        // we move the metadata to the registry, as we can retrieve it from there when needed.
         registry.register(name, module);
     }
 }

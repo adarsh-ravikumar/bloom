@@ -42,7 +42,7 @@ use oxc_parser::Parser;
 use oxc_span::{GetSpan, SourceType, Span as OxcSpan};
 
 #[derive(Debug)]
-pub struct SemanticAnalyzer {
+pub struct ScriptAnalyzer {
     pub context_tree: Vec<SymbolTable>,
     pub uses: Vec<SymbolUse>,
     pub current_source: String,
@@ -79,8 +79,8 @@ impl Default for TypeAnnotation {
 
 #[derive(Debug, Clone)]
 pub enum NamedType {
-    Alias(Alias),
-    Interface(Interface),
+    Alias(Alias, Option<Span>),
+    Interface(Interface, Option<Span>),
     Enum(Enum),
 }
 
@@ -128,7 +128,7 @@ pub struct SymbolTable {
     pub parent: usize,
 }
 
-impl<'a, 'b> SemanticAnalyzer
+impl<'a, 'b> ScriptAnalyzer
 where
     'a: 'b,
 {
@@ -235,6 +235,10 @@ where
                         string: self.view_span(expr.span),
                     },
                     context,
+
+                    // mark as false by default. we do not know yet.
+                    is_global_use: false,
+                    is_template_context_use: false,
                 });
             }
 
@@ -757,7 +761,11 @@ where
                                         span: Span::from(ident.span),
                                         string: self.view_span(ident.span)
                                     },
-                                    context
+                                    context,
+
+                                    // mark as false by default. we do not know yet.
+                                    is_global_use: false,
+                                    is_template_context_use: false,
                                 }
                             );
 
@@ -796,6 +804,10 @@ where
                         string: self.view_span(target.span),
                     },
                     context,
+
+                    // mark as false by default. we do not know yet.
+                    is_global_use: false,
+                    is_template_context_use: false,
                 });
             }
 
@@ -1450,7 +1462,7 @@ where
                 self.insert_in_context(
                     context,
                     stmt.id.name.to_string(),
-                    Symbol::Type(NamedType::Alias(type_annotation)),
+                    Symbol::Type(NamedType::Alias(type_annotation, generics)),
                 );
             }
 
@@ -1551,7 +1563,7 @@ where
                 self.insert_in_context(
                     context,
                     stmt.id.name.to_string(),
-                    Symbol::Type(NamedType::Interface(fields)),
+                    Symbol::Type(NamedType::Interface(fields, generics)),
                 );
             }
 
@@ -2079,21 +2091,22 @@ where
         global_uses
     }
 
-    pub fn analyze(&mut self, module: &'a mut Module) {
-        let oxc_allocator = OxcAllocator::new();
-
-        // this gives uses in the script
+    pub fn analyze(
+        &mut self,
+        module: &'a mut Module,
+        oxc_allocator: &'a OxcAllocator,
+    ) {
         module.symbol_uses =
             self.analyze_script(&module.script.1, &oxc_allocator);
 
-        // this gives uses in expressions
-        self.analyze_expressions(&mut module.expressions, &oxc_allocator);
+        self.analyze_expressions(&mut module.expressions);
 
         // we need to now build the Members map.
         let global_context = &mut self.context_tree.get_mut(0).unwrap().symbols;
 
         for (name, symbol) in global_context.iter_mut() {
             match symbol {
+                // create new entries for variables
                 Symbol::Variable(var) => {
                     let var = if var.is_state && var.is_export {
                         ModuleMemberType::PublicState(var.clone())
@@ -2108,6 +2121,7 @@ where
                     module.metadata.insert(name.clone(), var);
                 }
 
+                // modify existing entires (populated by the preprocessor)
                 Symbol::Function(func) => {
                     if let Some(f) = module.metadata.get_mut(&func.name) {
                         match f {
@@ -2128,13 +2142,14 @@ where
                     }
                 }
 
+                // create new entires for type definitions
                 Symbol::Type(t) => {
                     let t = match t {
-                        NamedType::Alias(annotation) => {
+                        NamedType::Alias(annotation, _) => {
                             ModuleMemberType::Alias(std::mem::take(annotation))
                         }
 
-                        NamedType::Interface(interface) => {
+                        NamedType::Interface(interface, _) => {
                             ModuleMemberType::Interface(std::mem::take(
                                 interface,
                             ))
@@ -2156,26 +2171,17 @@ where
     pub fn analyze_expressions(
         &mut self,
         expressions: &'a mut Vec<Expression>,
-        oxc_allocator: &'a OxcAllocator,
     ) {
         for expr in expressions {
-            self.current_source = expr.source.string.clone();
-
-            let body = Self::parse(&expr.source.string, oxc_allocator);
-
-            let mut uses = Vec::new();
-
-            self.statements(0, &body, &mut uses);
-
-            let mut context_uses = Vec::new();
-            let mut global_uses = Vec::new();
-
             // collect global and context uses
-            for _use in uses {
+            for _use in &mut expr.symbol_uses {
                 let use_name = &_use.r#use.string;
 
                 if expr.context_vars.contains(&use_name) {
-                    context_uses.push(_use);
+                    _use.is_template_context_use = true;
+
+                    // set global_use to false, purely as an invariant
+                    _use.is_global_use = false;
                 } else if self.is_global_symbol(&use_name, _use.context) {
                     if let Some(Symbol::Variable(v)) = self
                         .context_tree
@@ -2189,12 +2195,31 @@ where
                         v.is_state = v.is_let;
                     }
 
-                    global_uses.push(_use);
+                    _use.is_global_use = true;
+
+                    // set template_context_use to false, purely as an invariant
+                    _use.is_template_context_use = false;
                 }
             }
-
-            expr.global_uses = global_uses;
-            expr.context_uses = context_uses;
         }
+    }
+
+    pub fn parse_expression(
+        &mut self,
+        expr: &mut Expression,
+        oxc_allocator: &'a OxcAllocator,
+    ) {
+        self.current_source = expr.source.string.clone();
+
+        let body = Self::parse(&expr.source.string, oxc_allocator);
+
+        expr.is_lone_identifier = body.len() == 1
+            && matches!(
+                body.first(),
+                Some(OxcStatement::ExpressionStatement(expr))
+                if matches!(&expr.expression, OxcExpression::Identifier(_))
+            );
+
+        self.statements(0, &body, &mut expr.symbol_uses);
     }
 }

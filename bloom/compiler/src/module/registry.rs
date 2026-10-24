@@ -33,17 +33,16 @@ impl<'a> ModuleRegistry {
         }
     }
 
-    pub fn lookup_attribute(
-        &self,
-        module_name: String,
-        attribute_name: String,
-    ) -> Option<&ModuleMemberType> {
-        if let Some(module) = self.get_module(&module_name) {
-            module.metadata.get(&attribute_name)
-        } else {
-            None
-        }
-    }
+    // pub fn lookup_attribute(
+    //     &self,
+    //     module_name: &String,
+    //     attribute_name: &String,
+    // ) -> Option<&ModuleMemberType> {
+    //     if let Some(module) = self.get_module(&module_name) {
+    //     } else {
+    //         None
+    //     }
+    // }
 
     pub fn analyze_dependencies(&self) {
         let mut completed = HashMap::new();

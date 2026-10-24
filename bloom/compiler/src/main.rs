@@ -4,6 +4,7 @@ use crate::{
 };
 
 // mod codegen;
+mod analysis;
 mod common;
 mod diagnostic;
 // mod discover;
@@ -97,7 +98,7 @@ fn main() {
     //
     // // script
     //
-    // let mut analyzer = SemanticAnalyzer::new();
+    // let mut analyzer = ScriptAnalyzer::new();
     //
     // let (global_symbols, script_source, uses_in_script) =
     //     if let Some(script) = &parser.root.script {

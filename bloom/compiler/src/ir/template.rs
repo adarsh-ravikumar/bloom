@@ -1,9 +1,8 @@
 use crate::{
-    common::{Source, Span},
-    ir::script::SymbolUse,
+    common::{Source, Span, SpannedString},
+    module::Expression,
     parser::{
-        AttributeValue, Control, EachControl, Fragment, FragmentNode,
-        IfControl, Part, Parts, Root, Widget,
+        Attribute, AttributeValue, Control, EachControl, Fragment, FragmentNode, IfControl, Part, Parts, Widget
     },
 };
 
@@ -12,7 +11,7 @@ pub struct TemplateIr<'a> {
     pub ir_nodes: Vec<IrNode>,
     pub expressions: Vec<Expression>,
 
-    ast: &'a Root,
+    ast: &'a Fragment,
     src: &'a Source,
     next_node_id: usize,
 
@@ -27,14 +26,16 @@ type ExpressionId = usize;
 pub enum IrNode {
     StartParts { id: NodeId },
     Text { value: String, id: NodeId, parent: NodeId },
-    Expression { span: Span, id: NodeId, expr_id: ExpressionId, parent: NodeId },
+    Expression { span: SpannedString, id: NodeId, expr_id: ExpressionId, parent: NodeId },
     EndParts { id: NodeId, parent: NodeId },
 
     StartWidget { name: String, id: NodeId, is_platform: bool },
     EndWidget { id: NodeId, parent: NodeId },
 
     StartAttributeList,
-    AttributeName { name: String, span: Span },
+    AttributeName { name: String, id: NodeId },
+    AttributeBindState { from: String, to: String, id: NodeId},
+    AttributeBindEvent { from: String, to: String, id: NodeId},
     AttributeTrue,
     EndAttributeList,
 
@@ -70,7 +71,7 @@ fn sanitize_text(text: String) -> String {
 }
 
 impl<'a> TemplateIr<'a> {
-    pub fn new(ast: &'a Root, src: &'a Source) -> Self {
+    pub fn new(ast: &'a Fragment, src: &'a Source) -> Self {
         Self {
             next_node_id: 1, // 0 represents global scope
             ir_nodes: Vec::new(),
@@ -91,10 +92,8 @@ impl<'a> TemplateIr<'a> {
         self.ir_nodes.push(node)
     }
 
-    fn visit_text(&mut self, span: Span, parent: NodeId) {
+    fn visit_text(&mut self, value: String, parent: NodeId) {
         let id = self.get_node_id();
-
-        let value = self.src.view_span(span).to_string();
 
         self.emit_node(IrNode::Text {
             id,
@@ -103,16 +102,13 @@ impl<'a> TemplateIr<'a> {
         });
     }
 
-    fn visit_expression(&mut self, span: Span, parent: NodeId) -> ExpressionId {
+    fn visit_expression(
+        &mut self,
+        span: SpannedString,
+        parent: NodeId,
+    ) -> ExpressionId {
         let expr_id = self.expressions.len();
         let id = self.get_node_id();
-
-        self.expressions.push(Expression {
-            source: self.src.view_span(span).to_string(),
-            global_uses: Vec::new(),
-            context_uses: Vec::new(),
-            context_vars: self.context_vars.clone(),
-        });
 
         self.emit_node(IrNode::Expression {
             span,
@@ -124,16 +120,18 @@ impl<'a> TemplateIr<'a> {
         id
     }
 
-    fn visit_parts(&mut self, parts: &Parts, parent: NodeId) {
+    fn visit_parts(&mut self, parts: &mut Parts, parent: NodeId) {
         let id = self.get_node_id();
 
         self.emit_node(IrNode::StartParts { id });
 
         for part in parts {
             match part {
-                Part::Text(span) => self.visit_text(*span, id),
+                Part::Text(string) => {
+                    self.visit_text(std::mem::take(string), id)
+                }
                 Part::Expression(span) => {
-                    self.visit_expression(*span, id);
+                    self.visit_expression(std::mem::take(span), id);
                 }
             }
         }
@@ -141,11 +139,11 @@ impl<'a> TemplateIr<'a> {
         self.emit_node(IrNode::EndParts { id, parent });
     }
 
-    fn visit_widget(&mut self, widget: &Widget, parent: NodeId) {
+    fn visit_widget(&mut self, widget: &mut Widget, parent: NodeId) {
         let id = self.get_node_id();
 
         self.emit_node(IrNode::StartWidget {
-            name: self.src.view_span(widget.name).to_string(),
+            name: widget.name.string,
             id,
             is_platform: widget.is_platform,
         });
@@ -153,10 +151,15 @@ impl<'a> TemplateIr<'a> {
         self.emit_node(IrNode::StartAttributeList);
 
         for attrib in &widget.attributes {
-            self.emit_node(IrNode::AttributeName {
-                name: self.src.view_span(attrib.name).to_string(),
-                span: attrib.name,
-            });
+            match attrib {
+                Attribute::Regular { name, value } => {
+                    self.emit_node(IrNode::AttributeName {
+                        name: attrib
+                        span: attrib.name,
+                    });
+
+                }
+            }
 
             match &attrib.value {
                 AttributeValue::Expression(span) => {
