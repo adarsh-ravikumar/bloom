@@ -1,4 +1,9 @@
-<:p>
-  <column> #cheeky </column>
-  <slot />
-</:p>
+<script>
+  export let attrib: string;
+
+  function test () {
+
+  }
+</script>
+
+<:p>Hello, world! {attrib}</:p>

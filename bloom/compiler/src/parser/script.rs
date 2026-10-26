@@ -2134,11 +2134,16 @@ where
                             ModuleMemberType::Reactive(e) => {
                                 *e = Some(func.clone())
                             }
-                            ModuleMemberType::Function(e) => {
-                                *e = Some(func.clone())
-                            }
+
+                            // we can never encounter ModuleMemberType::Function because
+                            // the preprocessor does not populate regular functions
                             _ => unreachable!(),
                         }
+                    } else {
+                        module.metadata.insert(
+                            func.name.clone(),
+                            ModuleMemberType::Function(func.clone()),
+                        );
                     }
                 }
 

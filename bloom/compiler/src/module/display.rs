@@ -72,7 +72,7 @@ impl Module {
                 } => {
                     print!(
                         "{indent}   {} -> {}",
-                        bind_from.string,
+                        &bind_from.string,
                         if let Some(bind_to) = &bind_to {
                             &bind_to.string
                         } else {

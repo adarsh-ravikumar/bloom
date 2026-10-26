@@ -1,8 +1,11 @@
+use std::mem::take;
+
 use crate::{
-    common::{Source, Span, SpannedString},
-    module::Expression,
+    common::{Source, SpannedString},
+    module::{Expression, ModuleRegistry},
     parser::{
-        Attribute, AttributeValue, Control, EachControl, Fragment, FragmentNode, IfControl, Part, Parts, Widget
+        Attribute, AttributeValue, Control, EachControl, Fragment,
+        FragmentNode, IfControl, Part, Parts, Widget,
     },
 };
 
@@ -12,10 +15,9 @@ pub struct TemplateIr<'a> {
     pub expressions: Vec<Expression>,
 
     ast: &'a Fragment,
-    src: &'a Source,
     next_node_id: usize,
 
-    context_vars: Vec<String>,
+    registry: &'a ModuleRegistry,
 }
 
 type NodeId = usize;
@@ -26,7 +28,7 @@ type ExpressionId = usize;
 pub enum IrNode {
     StartParts { id: NodeId },
     Text { value: String, id: NodeId, parent: NodeId },
-    Expression { span: SpannedString, id: NodeId, expr_id: ExpressionId, parent: NodeId },
+    Expression { id: NodeId, expr_id: ExpressionId, parent: NodeId },
     EndParts { id: NodeId, parent: NodeId },
 
     StartWidget { name: String, id: NodeId, is_platform: bool },
@@ -71,14 +73,13 @@ fn sanitize_text(text: String) -> String {
 }
 
 impl<'a> TemplateIr<'a> {
-    pub fn new(ast: &'a Fragment, src: &'a Source) -> Self {
+    pub fn new(ast: &'a Fragment, registry: &'a ModuleRegistry) -> Self {
         Self {
             next_node_id: 1, // 0 represents global scope
             ir_nodes: Vec::new(),
             expressions: Vec::new(),
             ast,
-            src,
-            context_vars: Vec::new(),
+            registry,
         }
     }
 
@@ -104,18 +105,19 @@ impl<'a> TemplateIr<'a> {
 
     fn visit_expression(
         &mut self,
-        span: SpannedString,
+        expr: Expression,
         parent: NodeId,
     ) -> ExpressionId {
         let expr_id = self.expressions.len();
         let id = self.get_node_id();
 
         self.emit_node(IrNode::Expression {
-            span,
             expr_id,
             id,
             parent,
         });
+
+        self.expressions.push(expr);
 
         id
     }
@@ -130,8 +132,8 @@ impl<'a> TemplateIr<'a> {
                 Part::Text(string) => {
                     self.visit_text(std::mem::take(string), id)
                 }
-                Part::Expression(span) => {
-                    self.visit_expression(std::mem::take(span), id);
+                Part::Expression(expr) => {
+                    self.visit_expression(std::mem::take(expr), id);
                 }
             }
         }
@@ -143,7 +145,7 @@ impl<'a> TemplateIr<'a> {
         let id = self.get_node_id();
 
         self.emit_node(IrNode::StartWidget {
-            name: widget.name.string,
+            name: take(&mut widget.name.string),
             id,
             is_platform: widget.is_platform,
         });
@@ -151,46 +153,45 @@ impl<'a> TemplateIr<'a> {
         self.emit_node(IrNode::StartAttributeList);
 
         for attrib in &widget.attributes {
-            match attrib {
-                Attribute::Regular { name, value } => {
-                    self.emit_node(IrNode::AttributeName {
-                        name: attrib
-                        span: attrib.name,
-                    });
+            // match attrib {
+            //     Attribute::Regular { name, value } => {
+            //         self.emit_node(IrNode::AttributeName {
+            //             name: attrib
+            //             span: attrib.name,
+            //         });
+            //     }
+            // }
 
-                }
-            }
-
-            match &attrib.value {
-                AttributeValue::Expression(span) => {
-                    //TODO: handle visit expression parent here
-                    self.visit_expression(*span, 0);
-                }
-
-                AttributeValue::Parts(parts) => {
-                    // the parts generated within an attribute will have a value of 0
-                    // the consumer of the IR is expected to handle the attribute's value
-                    // as a special case, in terms of association
-                    self.visit_parts(parts, 0)
-                }
-
-                AttributeValue::True => {
-                    self.emit_node(IrNode::AttributeTrue);
-                }
-
-                AttributeValue::BindingAttribute {
-                    bind_from,
-                    bind_to,
-                    value,
-                } => {
-                    todo!()
-                }
-            }
+            // match &attrib.value {
+            //     AttributeValue::Expression(span) => {
+            //         //TODO: handle visit expression parent here
+            //         self.visit_expression(*span, 0);
+            //     }
+            //
+            //     AttributeValue::Parts(parts) => {
+            //         // the parts generated within an attribute will have a value of 0
+            //         // the consumer of the IR is expected to handle the attribute's value
+            //         // as a special case, in terms of association
+            //         self.visit_parts(parts, 0)
+            //     }
+            //
+            //     AttributeValue::True => {
+            //         self.emit_node(IrNode::AttributeTrue);
+            //     }
+            //
+            //     AttributeValue::BindingAttribute {
+            //         bind_from,
+            //         bind_to,
+            //         value,
+            //     } => {
+            //         todo!()
+            //     }
+            // }
         }
 
         self.emit_node(IrNode::EndAttributeList);
 
-        if let Some(frag) = &widget.fragment {
+        if let Some(frag) = &mut widget.fragment {
             self.visit_fragment(frag, id);
         }
 
@@ -198,88 +199,90 @@ impl<'a> TemplateIr<'a> {
     }
 
     fn visit_control(&mut self, control: &Control, parent: NodeId) {
-        match control {
-            Control::If(if_ctrl) => self.visit_if(if_ctrl, parent),
-            Control::Each(each_ctrl) => self.visit_each(each_ctrl, parent),
-        }
+        // match control {
+        //     Control::If(if_ctrl) => self.visit_if(if_ctrl, parent),
+        //     Control::Each(each_ctrl) => self.visit_each(each_ctrl, parent),
+        // }
     }
 
-    fn visit_if(&mut self, if_ctrl: &IfControl, parent: NodeId) {
-        let if_id = self.get_node_id();
+    // fn visit_if(&mut self, if_ctrl: &IfControl, parent: NodeId) {
+    //     let if_id = self.get_node_id();
+    //
+    //     //TODO: handle visit expression parent here
+    //     let test = Some(self.visit_expression(if_ctrl.condition, 0));
+    //
+    //     self.emit_node(IrNode::StartIfBlock { test, id: if_id });
+    //
+    //     self.visit_fragment(&if_ctrl.body, if_id);
+    //
+    //     for case in &if_ctrl.elifs {
+    //         //TODO: handle visit expression parent here
+    //         let test = Some(self.visit_expression(if_ctrl.condition, 0));
+    //
+    //         let case_id = self.get_node_id();
+    //
+    //         self.emit_node(IrNode::StartCaseBlock { test, id: case_id });
+    //
+    //         self.visit_fragment(&case.body, case_id);
+    //
+    //         self.emit_node(IrNode::EndCaseBlock {
+    //             id: case_id,
+    //             parent: if_id,
+    //         });
+    //     }
+    //
+    //     if let Some(else_ctrl) = &if_ctrl.else_body {
+    //         let else_id = self.get_node_id();
+    //
+    //         self.emit_node(IrNode::StartCaseBlock {
+    //             test: None,
+    //             id: else_id,
+    //         });
+    //
+    //         self.visit_fragment(else_ctrl, else_id);
+    //
+    //         self.emit_node(IrNode::EndCaseBlock {
+    //             id: else_id,
+    //             parent: if_id,
+    //         });
+    //     }
+    //
+    //     self.emit_node(IrNode::EndIfBlock { id: if_id, parent });
+    // }
+    //
+    // fn visit_each(&mut self, each_ctrl: &EachControl, parent: NodeId) {
+    //     let each_id = self.get_node_id();
+    //
+    //     //TODO: handle visit expression parent here
+    //     let iterable = Some(self.visit_expression(each_ctrl.expression, 0));
+    //
+    //     let context = self.src.view_span(each_ctrl.context).to_string();
+    //
+    //     self.emit_node(IrNode::StartEachBlock {
+    //         iterable,
+    //         id: each_id,
+    //     });
+    //
+    //     self.context_vars.push(context);
+    //
+    //     self.visit_fragment(&each_ctrl.body, each_id);
+    //
+    //     self.context_vars.pop();
+    //
+    //     self.emit_node(IrNode::EndEachBlock {
+    //         id: each_id,
+    //         parent,
+    //     });
+    // }
 
-        //TODO: handle visit expression parent here
-        let test = Some(self.visit_expression(if_ctrl.condition, 0));
-
-        self.emit_node(IrNode::StartIfBlock { test, id: if_id });
-
-        self.visit_fragment(&if_ctrl.body, if_id);
-
-        for case in &if_ctrl.elifs {
-            //TODO: handle visit expression parent here
-            let test = Some(self.visit_expression(if_ctrl.condition, 0));
-
-            let case_id = self.get_node_id();
-
-            self.emit_node(IrNode::StartCaseBlock { test, id: case_id });
-
-            self.visit_fragment(&case.body, case_id);
-
-            self.emit_node(IrNode::EndCaseBlock {
-                id: case_id,
-                parent: if_id,
-            });
-        }
-
-        if let Some(else_ctrl) = &if_ctrl.else_body {
-            let else_id = self.get_node_id();
-
-            self.emit_node(IrNode::StartCaseBlock {
-                test: None,
-                id: else_id,
-            });
-
-            self.visit_fragment(else_ctrl, else_id);
-
-            self.emit_node(IrNode::EndCaseBlock {
-                id: else_id,
-                parent: if_id,
-            });
-        }
-
-        self.emit_node(IrNode::EndIfBlock { id: if_id, parent });
-    }
-
-    fn visit_each(&mut self, each_ctrl: &EachControl, parent: NodeId) {
-        let each_id = self.get_node_id();
-
-        //TODO: handle visit expression parent here
-        let iterable = Some(self.visit_expression(each_ctrl.expression, 0));
-
-        let context = self.src.view_span(each_ctrl.context).to_string();
-
-        self.emit_node(IrNode::StartEachBlock {
-            iterable,
-            id: each_id,
-        });
-
-        self.context_vars.push(context);
-
-        self.visit_fragment(&each_ctrl.body, each_id);
-
-        self.context_vars.pop();
-
-        self.emit_node(IrNode::EndEachBlock {
-            id: each_id,
-            parent,
-        });
-    }
-
-    fn visit_fragment(&mut self, frag: &Fragment, parent: NodeId) {
-        for node in &frag.nodes {
+    fn visit_fragment(&mut self, frag: &mut Fragment, parent: NodeId) {
+        for node in &mut frag.nodes {
             match node {
-                FragmentNode::Text(span) => self.visit_text(*span, parent),
-                FragmentNode::Expression(span) => {
-                    self.visit_expression(*span, parent);
+                FragmentNode::Text(span) => {
+                    self.visit_text(std::mem::take(span), parent)
+                }
+                FragmentNode::Expression(expr) => {
+                    self.visit_expression(std::mem::take(expr), parent);
                 }
                 FragmentNode::Widget(widget) => {
                     self.visit_widget(widget, parent)
@@ -295,8 +298,6 @@ impl<'a> TemplateIr<'a> {
     }
 
     pub fn generate_ir(&mut self) {
-        if let Some(frag) = &self.ast.fragment {
-            self.visit_fragment(frag, 0)
-        }
+        self.visit_fragment(self.ast, 0)
     }
 }

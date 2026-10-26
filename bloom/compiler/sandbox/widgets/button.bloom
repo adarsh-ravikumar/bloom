@@ -1,4 +1,4 @@
-<button>
-  <p> Hello! </p>
-</button>
+<:button click:tap>
+  <text id={this_is_an_id} attrib="123" test={uhh}> Hello! </text>
+</:button>
 

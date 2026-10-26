@@ -1,10 +1,10 @@
 use oxc_allocator::Allocator as OxcAllocator;
 
 use crate::{
-    analysis::ScriptAnalyzer,
     common::{ERRONEOUS_SPAN, Source, Span, SpannedString},
     diagnostic::Diagnostic,
     module::{Expression, Module, ModuleMemberType, ModuleMetadata},
+    parser::ScriptAnalyzer,
     parser::nodes::*,
 };
 
@@ -606,14 +606,13 @@ impl<'a> Parser<'a> {
 
                 let bind_from = name;
 
-                // if we encounter whitespace, that means we are dealing with the `state:` case.
+                let bind_to = self
+                    .parse_ident(&[b'=', b'{', b'>', b'"', b'\'', b':', b'/']);
 
-                let bind_to =                 // bind to should be treated as an expression, as it should refer to a variable in the script
-                if self.eat(" ") || self.eat("\n") || self.eat("\t") {
-None
+                let bind_to = if bind_to.span == ERRONEOUS_SPAN {
+                    None
                 } else {
-Some(self
-                    .parse_ident(&[b'=', b'{', b'>', b'"', b'\'', b':', b'/']))
+                    Some(bind_to)
                 };
 
                 self.consume_whitespace();

@@ -1,4 +1,5 @@
 use crate::{
+    analysis::TemplateAnalyzer,
     common::Source,
     module::{Module, ModuleRegistry, ModuleType},
 };
@@ -25,31 +26,31 @@ fn main() {
             ModuleType::Widget,
             Source::from_path("sandbox/widgets/text.bloom").unwrap(),
         ),
-        (
-            "column",
-            ModuleType::Widget,
-            Source::from_path("sandbox/widgets/column.bloom").unwrap(),
-        ),
-        (
-            "row",
-            ModuleType::Widget,
-            Source::from_path("sandbox/widgets/column.bloom").unwrap(),
-        ),
-        (
-            "slider",
-            ModuleType::Widget,
-            Source::from_path("sandbox/widgets/slider.bloom").unwrap(),
-        ),
-        (
-            "inspector",
-            ModuleType::Panel,
-            Source::from_path("sandbox/panels/inspector.bloom").unwrap(),
-        ),
-        (
-            "counter",
-            ModuleType::Widget,
-            Source::from_path("sandbox/widgets/counter.bloom").unwrap(),
-        ),
+        // (
+        //     "column",
+        //     ModuleType::Widget,
+        //     Source::from_path("sandbox/widgets/column.bloom").unwrap(),
+        // ),
+        // (
+        //     "row",
+        //     ModuleType::Widget,
+        //     Source::from_path("sandbox/widgets/column.bloom").unwrap(),
+        // ),
+        // (
+        //     "slider",
+        //     ModuleType::Widget,
+        //     Source::from_path("sandbox/widgets/slider.bloom").unwrap(),
+        // ),
+        // (
+        //     "inspector",
+        //     ModuleType::Panel,
+        //     Source::from_path("sandbox/panels/inspector.bloom").unwrap(),
+        // ),
+        // (
+        //     "counter",
+        //     ModuleType::Widget,
+        //     Source::from_path("sandbox/widgets/counter.bloom").unwrap(),
+        // ),
     ];
 
     let mut registry = ModuleRegistry::new();
@@ -66,6 +67,11 @@ fn main() {
 
     println!("\nPerforming dependency analysis:");
     registry.analyze_dependencies();
+
+    println!("\nPerforming template analysis:");
+    let mut template_analyzer = TemplateAnalyzer::new(&registry);
+    template_analyzer
+        .visit_module(registry.get_module(&String::from("button")).unwrap());
 
     // let mut renderer = DiagnosticRenderer::new(&source);
     //

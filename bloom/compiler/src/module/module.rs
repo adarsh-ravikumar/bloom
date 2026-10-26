@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
 use crate::{
-    analysis::{Alias, Enum, Interface, TypeAnnotation},
+    analysis::TemplateAnalyzer,
     common::{ERRONEOUS_SPAN, Source, Span, SpannedString},
     diagnostic::DiagnosticRenderer,
     module::ModuleRegistry,
-    parser::{Fragment, Parser},
+    parser::{Alias, Enum, Fragment, Interface, Parser, TypeAnnotation},
 };
 
 #[derive(Debug, Clone)]
@@ -23,7 +23,7 @@ pub struct SymbolUse {
     pub is_template_context_use: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Expression {
     pub source: SpannedString,
     pub is_lone_identifier: bool,
@@ -65,10 +65,14 @@ pub struct Function {
 
 #[derive(Debug, Clone)]
 pub enum ModuleMemberType {
+    // event, command and reactive hold Option<Function> because their entries are
+    // first populated by the preprocessor. it is only during script analysis that the actual
+    // functions are parsed
     Event(Option<Function>),
     Command(Option<Function>),
     Reactive(Option<Function>),
-    Function(Option<Function>),
+
+    Function(Function),
 
     PrivateState(Variable),
     PublicState(Variable),
