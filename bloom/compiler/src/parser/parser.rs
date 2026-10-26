@@ -3,9 +3,10 @@ use oxc_allocator::Allocator as OxcAllocator;
 use crate::{
     common::{ERRONEOUS_SPAN, Source, Span, SpannedString},
     diagnostic::Diagnostic,
-    module::{Expression, Module, ModuleMemberType, ModuleMetadata},
-    parser::ScriptAnalyzer,
-    parser::nodes::*,
+    module::{
+        Expression, ExpressionId, Module, ModuleMemberType, ModuleMetadata,
+    },
+    parser::{ScriptAnalyzer, nodes::*},
 };
 
 #[derive(Default)]
@@ -223,8 +224,6 @@ impl<'a> Parser<'a> {
                         self.consume(1);
                         let expr = self.parse_embedded_expression("}");
 
-                        self.module.expressions.push(expr.clone());
-
                         parts.push(Part::Expression(expr));
 
                         if !self.eat("}") {
@@ -294,14 +293,14 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_embedded_expression(&mut self, delim: &str) -> Expression {
+    fn parse_embedded_expression(&mut self, delim: &str) -> ExpressionId {
         let source = self.identify_guest_boundary(delim);
         let mut expr = Expression::new(source);
 
         self.script_analyzer
             .parse_expression(&mut expr, &self.oxc_allocator);
 
-        expr
+        self.module.insert_expression(expr)
     }
 
     fn identify_guest_boundary(&mut self, delim: &str) -> SpannedString {
@@ -510,8 +509,6 @@ impl<'a> Parser<'a> {
                 self.emit_unclosed_expression(expr_start);
             }
 
-            self.module.expressions.push(expr.clone());
-
             return Some(AttributeValue::Expression(expr));
         }
 
@@ -541,8 +538,6 @@ impl<'a> Parser<'a> {
                 if !self.eat("}") {
                     self.emit_unclosed_expression(expr_start);
                 }
-
-                self.module.expressions.push(expr.clone());
 
                 parts.push(Part::Expression(expr));
             }
@@ -580,10 +575,10 @@ impl<'a> Parser<'a> {
                     self.emit_unclosed_expression(expr_start);
                 }
 
-                self.module.expressions.push(expr.clone());
+                let name = self.module.get_expression(expr).source.clone();
 
                 attributes.push(Attribute::Regular {
-                    name: expr.source.clone(),
+                    name,
                     value: AttributeValue::Expression(expr),
                 });
 
@@ -1085,7 +1080,9 @@ impl<'a> Parser<'a> {
             self.emit_unclosed_expression(expr_start);
         }
 
-        if expr.source.span == ERRONEOUS_SPAN {
+        let span = self.module.get_expression(expr).source.span;
+
+        if span == ERRONEOUS_SPAN {
             self.emit_expected_control_expression(control_start, "if");
         }
 
@@ -1156,8 +1153,6 @@ impl<'a> Parser<'a> {
             }
         }
 
-        self.module.expressions.push(expr.clone());
-
         Control::If(IfControl {
             condition: expr,
             body: fragment,
@@ -1180,7 +1175,9 @@ impl<'a> Parser<'a> {
             self.emit_unclosed_expression(expr_start);
         }
 
-        if expr.source.span == ERRONEOUS_SPAN {
+        let span = self.module.get_expression(expr).source.span;
+
+        if span == ERRONEOUS_SPAN {
             self.emit_expected_control_expression(case_start, "elif");
         }
 
@@ -1192,8 +1189,6 @@ impl<'a> Parser<'a> {
             FragmentEnd::ControlCase,
             FragmentEnd::ControlEnd,
         ]);
-
-        self.module.expressions.push(expr.clone());
 
         ElifControl {
             condition: expr,
@@ -1274,8 +1269,6 @@ impl<'a> Parser<'a> {
         }
 
         let body = self.parse_fragment(&[FragmentEnd::ControlEnd]);
-
-        self.module.expressions.push(expr.clone());
 
         Control::Each(EachControl {
             expression: expr,

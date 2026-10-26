@@ -1,4 +1,7 @@
-use crate::{common::SpannedString, module::Expression};
+use crate::{
+    common::SpannedString,
+    module::{Expression, ExpressionId},
+};
 
 // Fragment
 #[derive(Debug)]
@@ -11,7 +14,7 @@ pub enum FragmentNode {
     Widget(Widget),
     Parts(Parts),
     Text(String),
-    Expression(Expression),
+    Expression(ExpressionId),
     Control(Control),
 }
 
@@ -27,7 +30,7 @@ pub enum FragmentEnd {
 #[derive(Debug)]
 pub enum Part {
     Text(String),
-    Expression(Expression),
+    Expression(ExpressionId),
 }
 pub type Parts = Vec<Part>;
 
@@ -58,7 +61,7 @@ pub enum Control {
 
 #[derive(Debug)]
 pub struct IfControl {
-    pub condition: Expression,
+    pub condition: ExpressionId,
     pub body: Fragment,
     pub elifs: Vec<ElifControl>,
     pub else_body: Option<Fragment>,
@@ -66,13 +69,13 @@ pub struct IfControl {
 
 #[derive(Debug)]
 pub struct ElifControl {
-    pub condition: Expression,
+    pub condition: ExpressionId,
     pub body: Fragment,
 }
 
 #[derive(Debug)]
 pub struct EachControl {
-    pub expression: Expression,
+    pub expression: ExpressionId,
     pub context: SpannedString,
     pub body: Fragment,
 }
@@ -94,7 +97,7 @@ pub enum Attribute {
 
 #[derive(Debug)]
 pub enum AttributeValue {
-    Expression(Expression),
+    Expression(ExpressionId),
     Parts(Parts),
     True,
 }

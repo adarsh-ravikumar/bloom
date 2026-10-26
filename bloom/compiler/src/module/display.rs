@@ -17,7 +17,10 @@ impl Module {
                 println!("{indent}text: {:?}", text);
             }
             Part::Expression(expr) => {
-                println!("{indent}expr: {:?}", expr.source.string);
+                println!(
+                    "{indent}expr: {:?}",
+                    self.get_expression(*expr).source.string
+                );
             }
         }
     }
@@ -51,7 +54,7 @@ impl Module {
                         AttributeValue::Expression(expr) => {
                             println!(
                                 "{indent}   {name}: {}",
-                                expr.source.string
+                                self.get_expression(*expr).source.string
                             );
                         }
 
@@ -83,7 +86,10 @@ impl Module {
                     if let Some(value) = value {
                         match value {
                             AttributeValue::Expression(expr) => {
-                                println!(" = {}", expr.source.string);
+                                println!(
+                                    " = {}",
+                                    self.get_expression(*expr).source.string
+                                );
                             }
                             AttributeValue::Parts(parts) => {
                                 println!(" =");
@@ -127,7 +133,10 @@ impl Module {
                 }
 
                 FragmentNode::Expression(expr) => {
-                    println!("{base_indent}expr: {:?}", expr.source.string);
+                    println!(
+                        "{base_indent}expr: {:?}",
+                        self.get_expression(*expr).source.string
+                    );
                 }
 
                 FragmentNode::Parts(parts) => {
@@ -139,7 +148,9 @@ impl Module {
                     Control::If(if_block) => {
                         println!(
                             "{base_indent}if: {:?}",
-                            if_block.condition.source.string
+                            self.get_expression(if_block.condition)
+                                .source
+                                .string
                         );
 
                         self.display_fragment(&if_block.body, level + 1, '|');
@@ -147,7 +158,9 @@ impl Module {
                         for elif in &if_block.elifs {
                             println!(
                                 "{base_indent}elif: {:?}",
-                                elif.condition.source.string
+                                self.get_expression(elif.condition)
+                                    .source
+                                    .string
                             );
 
                             self.display_fragment(&elif.body, level + 1, '|');
@@ -163,7 +176,9 @@ impl Module {
                         println!("{base_indent}each:");
                         println!(
                             "{child_indent}expr: {:?}",
-                            each_block.expression.source.string
+                            self.get_expression(each_block.expression)
+                                .source
+                                .string
                         );
                         println!(
                             "{child_indent}context: {:?}",
