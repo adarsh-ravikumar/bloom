@@ -1,6 +1,7 @@
 use crate::{
     analysis::{AttributeAnalyzer, ExpressionAnalyzer, ModuleContext},
     common::Source,
+    ir::TemplateIrGen,
     module::{Module, ModuleRegistry, ModuleType},
 };
 
@@ -9,7 +10,7 @@ mod analysis;
 mod common;
 mod diagnostic;
 // mod discover;
-// mod ir;
+mod ir;
 mod module;
 mod parser;
 mod utils;
@@ -105,12 +106,26 @@ fn main() {
         }
     };
 
+    println!("\nPerforming Intermediate Representation Generation");
+
     for module in &order {
-        let module = &registry.modules[*module];
+        let module = &mut registry.modules[*module];
+
         println!(
             "\nExpressions after semantic pass in module {}",
             module.name
         );
         println!("{:?}", module.expressions);
+
+        println!("\nGenerating module {}", module.name);
+
+        if let Some(root) = &module.root {
+            let mut ir_gen = TemplateIrGen::new(root);
+            ir_gen.generate_ir();
+
+            for node in &ir_gen.ir_nodes {
+                println!("{node:?}");
+            }
+        }
     }
 }

@@ -1,2 +1,2 @@
 mod template;
-pub use template::{IrNode, TemplateIr};
+pub use template::{IrNode, TemplateIrGen};

@@ -5,7 +5,11 @@
 <:button click:tap >
   <text id={this_is_an_id} test={uhh} on:hover on:click={testing} value:abc attrib:testing> 
     Hello!
-    {abc}
+
+    {#if abc}
+      {abc}
+    {/if}
+
   </text>
 </:button>
 
