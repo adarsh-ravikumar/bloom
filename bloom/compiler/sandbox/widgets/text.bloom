@@ -1,9 +1,24 @@
 <script>
   export let attrib: string;
+  let value: string;
 
   function test () {
 
   }
+
+
+  #event
+  function hover () {
+
+  }
+
+  #event
+  function click () {
+
+  }
 </script>
 
-<:p>Hello, world! {attrib}</:p>
+<:p>
+  Hello, world! {attrib}
+  {value}
+</:p>

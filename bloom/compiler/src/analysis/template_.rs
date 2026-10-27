@@ -6,13 +6,13 @@ use crate::{
     parser::{Attribute, AttributeValue, Fragment, FragmentNode, Part, Widget},
 };
 
-pub struct TemplateAnalyzer<'a> {
+pub struct AttributeAnalyzer<'a> {
     registry: &'a ModuleRegistry,
     current_module: Option<&'a Module>,
     ids: HashSet<&'a str>,
 }
 
-impl<'a> TemplateAnalyzer<'a> {
+impl<'a> AttributeAnalyzer<'a> {
     fn visit_fragment(&self, frag: &Fragment) {
         for node in &frag.nodes {
             if let FragmentNode::Widget(w) = node {

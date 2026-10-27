@@ -1,4 +1,11 @@
-<:button click:tap>
-  <text id={this_is_an_id} attrib="123" test={uhh}> Hello! </text>
+<script>
+  let uhh;
+</script>
+
+<:button click:tap >
+  <text id={this_is_an_id} test={uhh} on:hover on:click={testing} value:abc attrib:testing> 
+    Hello!
+    {abc}
+  </text>
 </:button>
 

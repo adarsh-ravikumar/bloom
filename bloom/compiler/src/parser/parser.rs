@@ -577,10 +577,10 @@ impl<'a> Parser<'a> {
 
                 let name = self.module.get_expression(expr).source.clone();
 
-                attributes.push(Attribute::Regular {
+                attributes.push(Attribute::Regular(RegularAttribute {
                     name,
                     value: AttributeValue::Expression(expr),
-                });
+                }));
 
                 continue;
             }
@@ -605,9 +605,9 @@ impl<'a> Parser<'a> {
                     .parse_ident(&[b'=', b'{', b'>', b'"', b'\'', b':', b'/']);
 
                 let bind_to = if bind_to.span == ERRONEOUS_SPAN {
-                    None
+                    bind_from.clone()
                 } else {
-                    Some(bind_to)
+                    bind_to
                 };
 
                 self.consume_whitespace();
@@ -625,11 +625,11 @@ impl<'a> Parser<'a> {
                     None
                 };
 
-                attributes.push(Attribute::Binding {
+                attributes.push(Attribute::Binding(BindingAttribute {
                     bind_from,
                     bind_to,
                     value,
-                });
+                }));
 
                 self.consume_whitespace();
                 continue;
@@ -637,10 +637,10 @@ impl<'a> Parser<'a> {
 
             // boolean
             if !self.eat("=") {
-                attributes.push(Attribute::Regular {
+                attributes.push(Attribute::Regular(RegularAttribute {
                     name,
                     value: AttributeValue::True,
-                });
+                }));
 
                 self.consume_whitespace();
                 continue;
@@ -649,7 +649,8 @@ impl<'a> Parser<'a> {
             // value
             let value = self.parse_attribute_value();
             if let Some(value) = value {
-                attributes.push(Attribute::Regular { name, value });
+                attributes
+                    .push(Attribute::Regular(RegularAttribute { name, value }));
             } else {
                 // invalid value
                 // diagnostics would have already been pushed. do nothing here.

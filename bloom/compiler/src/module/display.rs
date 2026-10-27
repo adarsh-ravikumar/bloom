@@ -43,10 +43,10 @@ impl Module {
 
         for attrib in &elem.attributes {
             match attrib {
-                Attribute::Regular { name, value } => {
-                    let name = &name.string;
+                Attribute::Regular(attrib) => {
+                    let name = &attrib.name.string;
 
-                    match value {
+                    match &attrib.value {
                         AttributeValue::True => {
                             println!("{indent}   {name},");
                         }
@@ -68,22 +68,13 @@ impl Module {
                     }
                 }
 
-                Attribute::Binding {
-                    bind_from,
-                    bind_to,
-                    value,
-                } => {
+                Attribute::Binding(attrib) => {
                     print!(
                         "{indent}   {} -> {}",
-                        &bind_from.string,
-                        if let Some(bind_to) = &bind_to {
-                            &bind_to.string
-                        } else {
-                            &bind_from.string
-                        }
+                        &attrib.bind_from.string, &attrib.bind_to.string,
                     );
 
-                    if let Some(value) = value {
+                    if let Some(value) = &attrib.value {
                         match value {
                             AttributeValue::Expression(expr) => {
                                 println!(

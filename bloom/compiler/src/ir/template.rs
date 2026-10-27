@@ -164,7 +164,7 @@ impl<'a> TemplateIr<'a> {
 
             // match &attrib.value {
             //     AttributeValue::Expression(span) => {
-            //         //TODO: handle visit expression parent here
+            //         // TODO: handle visit expression parent here
             //         self.visit_expression(*span, 0);
             //     }
             //
@@ -208,7 +208,7 @@ impl<'a> TemplateIr<'a> {
     // fn visit_if(&mut self, if_ctrl: &IfControl, parent: NodeId) {
     //     let if_id = self.get_node_id();
     //
-    //     //TODO: handle visit expression parent here
+    //     // TODO: handle visit expression parent here
     //     let test = Some(self.visit_expression(if_ctrl.condition, 0));
     //
     //     self.emit_node(IrNode::StartIfBlock { test, id: if_id });
@@ -216,7 +216,7 @@ impl<'a> TemplateIr<'a> {
     //     self.visit_fragment(&if_ctrl.body, if_id);
     //
     //     for case in &if_ctrl.elifs {
-    //         //TODO: handle visit expression parent here
+    //         // TODO: handle visit expression parent here
     //         let test = Some(self.visit_expression(if_ctrl.condition, 0));
     //
     //         let case_id = self.get_node_id();
@@ -253,7 +253,7 @@ impl<'a> TemplateIr<'a> {
     // fn visit_each(&mut self, each_ctrl: &EachControl, parent: NodeId) {
     //     let each_id = self.get_node_id();
     //
-    //     //TODO: handle visit expression parent here
+    //     // TODO: handle visit expression parent here
     //     let iterable = Some(self.visit_expression(each_ctrl.expression, 0));
     //
     //     let context = self.src.view_span(each_ctrl.context).to_string();

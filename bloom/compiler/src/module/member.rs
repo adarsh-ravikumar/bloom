@@ -64,6 +64,10 @@ pub enum ModuleMemberType {
     Command(Option<Function>),
     Reactive(Option<Function>),
 
+    RenamedEvent { from: String, to: String },
+    StateProxy { from: String, to: String },
+    ExposedEvent { prefix: String, event: String },
+
     Function(Function),
 
     PrivateState(Variable),

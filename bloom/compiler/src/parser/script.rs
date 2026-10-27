@@ -1458,7 +1458,7 @@ where
                     None
                 };
 
-                //TODO: report disallowed type_parameters (generics)
+                // TODO: report disallowed type_parameters (generics)
                 self.insert_in_context(
                     context,
                     stmt.id.name.to_string(),
@@ -1559,7 +1559,7 @@ where
                     }
                 }
 
-                //TODO: report disallowed type_parameters (generics)
+                // TODO: report disallowed type_parameters (generics)
                 self.insert_in_context(
                     context,
                     stmt.id.name.to_string(),

@@ -1,11 +1,13 @@
 use std::collections::{HashMap, HashSet, hash_map::Keys};
 
-use crate::module::{Module, ModuleMemberType, ModuleMetadata, ModuleType};
+use crate::module::{
+    self, Module, ModuleMemberType, ModuleMetadata, ModuleType,
+};
 
 #[derive(Debug)]
 pub struct ModuleRegistry {
     lookup: HashMap<String, usize>,
-    modules: Vec<Module>,
+    pub modules: Vec<Module>,
 }
 
 impl<'a> ModuleRegistry {
@@ -44,60 +46,76 @@ impl<'a> ModuleRegistry {
     //     }
     // }
 
-    pub fn analyze_dependencies(&self) {
+    pub fn analyze_dependencies(&self) -> Vec<usize> {
         let mut completed = HashMap::new();
+        let mut dependency_list = Vec::new();
 
-        for module in self.lookup.keys() {
+        for module in self.lookup.values() {
             let mut visited = HashSet::new();
-            visited.insert(module);
+            visited.insert(*module);
 
-            self.visit_module(module, visited, &mut completed);
+            self.visit_module(
+                *module,
+                visited,
+                &mut completed,
+                &mut dependency_list,
+            );
         }
 
-        for (module_name, count) in completed {
-            let module = &self.modules[*self.lookup.get(module_name).unwrap()];
+        for (module, count) in completed {
+            let module = &self.modules[module];
 
             if count == 0 && matches!(module.r#type, ModuleType::Widget) {
-                println!("Dead widget: {module_name}");
+                println!("Dead widget: {module:?}");
             }
         }
+
+        println!("{:?}", self.lookup);
+        dependency_list
     }
 
     fn visit_module(
         &'a self,
-        module_name: &'a String,
-        visited: HashSet<&'a String>,
-        completed: &mut HashMap<&'a String, usize>,
+        module_index: usize,
+        visited: HashSet<usize>,
+        completed: &mut HashMap<usize, usize>,
+        dependency_list: &mut Vec<usize>,
     ) {
-        println!("visiting {module_name}. path {visited:?}");
+        // println!("visiting {module_index}. path {visited:?}");
 
-        if let Some(count) = completed.get_mut(&module_name) {
+        if let Some(count) = completed.get_mut(&module_index) {
+            // permanent mark.
             *count += 1;
             return;
         }
 
-        let index = self.lookup.get(module_name);
-
-        if index.is_none() {
-            println!("Module not found: {module_name}");
-            return;
-        }
-
-        let module = &self.modules[*index.unwrap()];
+        let module = &self.modules[module_index];
 
         for (dependency, _) in &module.dependencies {
-            if visited.contains(dependency) {
+            let index = if let Some(index) = self.lookup.get(dependency) {
+                *index
+            } else {
+                println!("Module not found {dependency}");
+                continue;
+            };
+
+            if visited.contains(&index) {
                 println!(
                     "CIRCULAR DEPENDENCY DETECTED ON MODULE {dependency:?}! {visited:?}"
                 );
             } else {
                 let mut visited = visited.clone();
-                visited.insert(dependency);
 
-                self.visit_module(dependency, visited, completed);
+                // temporary mark
+                visited.insert(index);
+
+                self.visit_module(index, visited, completed, dependency_list);
             }
         }
 
-        completed.insert(module_name, 0);
+        completed.insert(module_index, 0);
+        dependency_list.push(module_index);
     }
+
+    // visit module
 }

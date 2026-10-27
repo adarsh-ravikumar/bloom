@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use crate::{
     common::{ERRONEOUS_SPAN, Source, Span},
     diagnostic::DiagnosticRenderer,
-    module::*,
+    module::{
+        Expression, ExpressionId, ModuleMetadata, ModuleRegistry, SymbolUse,
+    },
     parser::{Fragment, Parser},
 };
 
@@ -18,6 +20,7 @@ pub struct Module {
     pub root: Option<Fragment>,
     pub r#type: ModuleType,
     pub script: (Span, String),
+    pub name: String,
     pub metadata: ModuleMetadata,
     pub dependencies: HashMap<String, Span>, // store the span of the first occurance
     pub symbol_uses: Vec<SymbolUse>,
@@ -31,6 +34,7 @@ impl Default for Module {
             r#type: ModuleType::Widget,
             script: (ERRONEOUS_SPAN, String::new()),
             metadata: ModuleMetadata::new(),
+            name: String::new(),
             dependencies: HashMap::new(),
             symbol_uses: Vec::new(),
             expressions: Vec::new(),
@@ -47,6 +51,7 @@ impl Module {
     ) {
         let mut module = Self::default();
         module.r#type = r#type;
+        module.name = name.clone();
 
         let mut renderer = DiagnosticRenderer::new(&source);
 
