@@ -54,7 +54,7 @@ fn sanitize_text(text: String) -> String {
         } else if *char == b'"' {
             san.push(b'\\');
             san.push(b'"');
-        } else if *char == b'\'' {
+        } else if *char == b'`' {
             san.push(b'\\');
             san.push(b'`');
         } else {
