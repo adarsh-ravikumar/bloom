@@ -1,7 +1,7 @@
 use crate::{
     analysis::{AttributeAnalyzer, ExpressionAnalyzer, ModuleContext},
     common::Source,
-    module::{Expression, Module, ModuleRegistry, ModuleType},
+    module::{Module, ModuleRegistry, ModuleType},
 };
 
 // mod codegen;
