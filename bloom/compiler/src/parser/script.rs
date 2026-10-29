@@ -2075,11 +2075,13 @@ where
         let body = Self::parse(script, oxc_allocator);
         self.current_source = script.clone();
 
-        let global_context = self.create_context(0);
+        if self.context_tree.is_empty() {
+            self.create_context(0);
+        }
 
         let mut uses = Vec::new();
 
-        self.statements(global_context, &body, &mut uses);
+        self.statements(0, &body, &mut uses);
 
         // collect global uses
         let global_uses = uses
@@ -2217,6 +2219,10 @@ where
         self.current_source = expr.source.string.clone();
 
         let body = Self::parse(&expr.source.string, oxc_allocator);
+
+        if self.context_tree.is_empty() {
+            self.create_context(0);
+        }
 
         expr.is_lone_identifier = body.len() == 1
             && matches!(
