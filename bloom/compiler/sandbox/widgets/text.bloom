@@ -1,24 +1,48 @@
 <script>
-  export let attrib: string;
-  let value: string;
+  export let attribThatMustFold: string;
+  let value: number;
 
   function test () {
-
+    console.log("haha normie");
   }
-
 
   #event
   function hover () {
-
+    console.log("hmmm... wdym hover?");
   }
 
   #event
   function click () {
+    console.log("Me was the clicked!");
+    return value;
+  }
 
+  #event
+  function longEventName (param1, param2, param3: number, param4: boolean, ...rest) {
+    console.log("get wrecked");
   }
 </script>
+
+<:button
+  on:click={
+    (e) => {
+      value ++;
+      click();
+    }
+  }
+
+  on:hover={
+    (e) => {
+      attrib += "a"; 
+      hover();
+    }
+  }
+>
+  Click me? 
+</:button>
 
 <:p>
   Hello, world! {attrib}
   {value}
 </:p>
+

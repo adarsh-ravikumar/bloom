@@ -7,6 +7,7 @@ use crate::{
         Expression, ExpressionId, Module, ModuleMemberType, ModuleMetadata,
     },
     parser::{ScriptAnalyzer, nodes::*},
+    utils,
 };
 
 #[derive(Default)]
@@ -1453,8 +1454,13 @@ impl<'a> Parser<'a> {
                     );
                 }
 
+                let canonical_name =
+                    utils::normalize_case(&fn_name, utils::Case::SnakeCase);
+
+                println!("canonical name for {fn_name} is {canonical_name}");
+
                 metadata.insert(
-                    fn_name,
+                    canonical_name,
                     match directive {
                         COMMAND => ModuleMemberType::Command(None),
                         EVENT => ModuleMemberType::Event(None),

@@ -49,7 +49,7 @@ this.build()
 }}
 
 build() {{
-const $0 = this.root;
+const w0 = this.root;
 {}
 }}
 }}

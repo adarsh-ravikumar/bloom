@@ -1,3 +1,3 @@
-mod js;
+mod template;
 
-pub use js::GenerateJs;
+pub use template::GenerateTemplateJs;

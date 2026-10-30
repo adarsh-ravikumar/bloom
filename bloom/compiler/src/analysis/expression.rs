@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use crate::module::{Expression, ModuleMetadata};
+use crate::module::{
+    Expression, ModuleMemberType, ModuleMetadata, SymbolUseType,
+};
 
 pub struct ExpressionAnalyzer<'a> {
     interface_delta: &'a HashMap<String, ModuleMetadata>,
@@ -20,17 +22,36 @@ impl<'a> ExpressionAnalyzer<'a> {
                 // we need to check only the delta interface, as any members that were
                 // declared before the semantic pass are already resolved.
 
-                let member_exists = self
-                    .interface_delta
-                    .get(module_name)
-                    .unwrap()
-                    .contains_key(&symbol_use.r#use.string);
-
-                if member_exists
-                    && !(symbol_use.is_template_context_use
-                        || symbol_use.is_global_use)
+                if !matches!(symbol_use.r#type, SymbolUseType::Local)
+                    && let Some(member) = self
+                        .interface_delta
+                        .get(module_name)
+                        .unwrap()
+                        .get(&symbol_use.r#use.string)
                 {
-                    symbol_use.is_global_use = true;
+                    match &member {
+                        ModuleMemberType::Event(_)
+                        | ModuleMemberType::Command(_)
+                        | ModuleMemberType::Reactive(_)
+                        | ModuleMemberType::Function(_)
+                        | ModuleMemberType::RenamedEvent { .. }
+                        | ModuleMemberType::ExposedEvent { .. } => {
+                            symbol_use.r#type = SymbolUseType::GlobalFunction
+                        }
+
+                        ModuleMemberType::PrivateState(_)
+                        | ModuleMemberType::PublicState(_)
+                        | ModuleMemberType::StateProxy { .. } => {
+                            symbol_use.r#type = SymbolUseType::GlobalState
+                        }
+
+                        ModuleMemberType::PrivateVariable(_)
+                        | ModuleMemberType::PublicVariable(_) => {
+                            symbol_use.r#type = SymbolUseType::GlobalVariable
+                        }
+
+                        _ => continue,
+                    }
                 }
             }
         }

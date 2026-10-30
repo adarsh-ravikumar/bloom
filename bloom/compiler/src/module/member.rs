@@ -6,11 +6,22 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
+pub enum SymbolUseType {
+    GlobalState,
+    GlobalVariable,
+    GlobalFunction,
+    TemplateContext,
+    GlobalUnresolved,
+    Local,
+    Unknown,
+}
+
+#[derive(Debug, Clone)]
 pub struct SymbolUse {
     pub r#use: SpannedString,
+    pub canonical_name: String,
+    pub r#type: SymbolUseType,
     pub context: usize,
-    pub is_global_use: bool,
-    pub is_template_context_use: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -36,19 +47,23 @@ impl Expression {
 
 #[derive(Debug, Clone)]
 pub struct Variable {
+    pub source_name: String,
+    pub canonical_name: String,
     pub span: Span,
     pub type_annotation: Option<TypeAnnotation>,
     pub is_let: bool,
     pub is_state: bool,
     pub is_export: bool,
-    pub init: Option<Span>,
+    pub init: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Function {
-    pub name: String,
+    pub source_name: String,
+    pub canonical_name: String,
     pub context: usize,
-    pub body: Option<String>,
+    pub body: SpannedString,
+    pub params: String,
     pub return_type: Option<TypeAnnotation>,
     // bloom does NOT allow for generics.
     // store here if any for diagnostics

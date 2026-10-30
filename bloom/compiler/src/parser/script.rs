@@ -1,15 +1,17 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, hash::Hash};
 
 use crate::{
     common::{ERRONEOUS_SPAN, Span, SpannedString},
     module::{
-        Expression, Function, Module, ModuleMemberType, SymbolUse, Variable,
+        Expression, Function, Module, ModuleMemberType, SymbolUse,
+        SymbolUseType, Variable,
     },
+    utils,
 };
 
 use oxc_allocator::{Allocator as OxcAllocator, Vec as OxcVec};
 
-use oxc_ast::ast::{Declaration, VariableDeclarationKind};
+use oxc_ast::ast::{Declaration, Str, VariableDeclarationKind};
 #[rustfmt::skip]
 use oxc_ast::ast::{
     Argument as OxcArgument,
@@ -108,6 +110,8 @@ pub enum Symbol {
     Function(Function),
 
     Parameter {
+        source_name: String,
+        canonical_name: String,
         span: OxcSpan,
         optional: bool,
         order: usize,
@@ -115,6 +119,8 @@ pub enum Symbol {
     },
 
     ParameterRest {
+        source_name: String,
+        canonical_name: String,
         span: OxcSpan,
     },
 
@@ -188,7 +194,7 @@ where
         &mut self,
         context: usize,
         expr: &OxcExpression<'a>,
-        uses: &mut Vec<SymbolUse>,
+        uses: &mut HashMap<usize, Vec<SymbolUse>>,
     ) {
         match expr {
             // these need not be visited
@@ -229,16 +235,16 @@ where
                  * - span: oxc_span::Span
                  */
 
-                uses.push(SymbolUse {
+                uses.get_mut(&context).unwrap().push(SymbolUse {
                     r#use: SpannedString {
                         span: Span::from(expr.span),
                         string: self.view_span(expr.span),
                     },
+                    canonical_name: String::default(),
                     context,
 
-                    // mark as false by default. we do not know yet.
-                    is_global_use: false,
-                    is_template_context_use: false,
+                    // mark as unknown by default. we do not know yet.
+                    r#type: SymbolUseType::Unknown,
                 });
             }
 
@@ -293,6 +299,7 @@ where
 
                 // creates a new semantic context.
                 let new_context = self.create_context(context);
+                uses.insert(new_context, Vec::new());
 
                 self.formal_parameters(new_context, &expr.params, uses);
 
@@ -426,6 +433,7 @@ where
 
                 // creates a new semantic context.
                 let new_context = self.create_context(context);
+                uses.insert(new_context, Vec::new());
 
                 self.formal_parameters(new_context, &expr.params, uses);
 
@@ -435,13 +443,33 @@ where
                     // if the body itself doesn't exist, then it doesn't make a
                     // difference if the function's name is tracked
                     if let Some(id) = &expr.id {
+                        let canonical_name = utils::normalize_case(
+                            &id.name,
+                            utils::Case::SnakeCase,
+                        );
+
+                        if self.context_tree[context]
+                            .symbols
+                            .contains_key(&canonical_name)
+                        {
+                            // TODO: diagnostics
+                            println!("Name collision on function {}", &id.name);
+                        }
+
+                        let body = SpannedString {
+                            span: Span::from(body),
+                            string: self.view_span(body),
+                        };
+
                         self.insert_in_context(
                             new_context,
                             id.name.to_string(),
                             Symbol::Function(Function {
-                                name: id.name.to_string(),
+                                source_name: id.name.to_string(),
+                                canonical_name,
                                 context: new_context,
-                                body: Some(self.view_span(body)),
+                                params: self.view_span(expr.params.span()),
+                                body,
                                 // we needn't care about the type annotation and
                                 // generics for a function expression.
                                 return_type: None,
@@ -648,7 +676,7 @@ where
         &mut self,
         context: usize,
         target: &OxcAssignmentTarget<'a>,
-        uses: &mut Vec<SymbolUse>,
+        uses: &mut HashMap<usize, Vec<SymbolUse>>,
     ) {
         /*
          * enum oxc_ast::ast::AssignmentTarget<'a>
@@ -671,7 +699,7 @@ where
         &mut self,
         context: usize,
         target: &OxcAssignmentTargetMaybeDefault<'a>,
-        uses: &mut Vec<SymbolUse>,
+        uses: &mut HashMap<usize, Vec<SymbolUse>>,
     ) {
         /*
          * enum oxc_ast::ast::AssignmentTargetMaybeDefault<'a>
@@ -709,7 +737,7 @@ where
         &mut self,
         context: usize,
         target: &OxcAssignmentTargetPattern<'a>,
-        uses: &mut Vec<SymbolUse>,
+        uses: &mut HashMap<usize, Vec<SymbolUse>>,
     ) {
         match target {
             OxcAssignmentTargetPattern::ArrayAssignmentTarget(target) => {
@@ -755,17 +783,17 @@ where
                             * - span: oxc_span::Span
                             */
 
-                            uses.push(
+                            uses.get_mut(&context).unwrap().push(
                                 SymbolUse {
                                     r#use: SpannedString {
                                         span: Span::from(ident.span),
                                         string: self.view_span(ident.span)
                                     },
+                                    canonical_name: String::default(),
                                     context,
 
-                                    // mark as false by default. we do not know yet.
-                                    is_global_use: false,
-                                    is_template_context_use: false,
+                                    // mark as unknown by default. we do not know yet.
+                                    r#type: SymbolUseType::Unknown
                                 }
                             );
 
@@ -789,7 +817,7 @@ where
         &mut self,
         context: usize,
         target: &OxcSimpleAssignmentTarget<'a>,
-        uses: &mut Vec<SymbolUse>,
+        uses: &mut HashMap<usize, Vec<SymbolUse>>,
     ) {
         match target {
             OxcSimpleAssignmentTarget::AssignmentTargetIdentifier(target) => {
@@ -798,16 +826,16 @@ where
                  * - span: oxc_span::Span
                  */
 
-                uses.push(SymbolUse {
+                uses.get_mut(&context).unwrap().push(SymbolUse {
                     r#use: SpannedString {
                         span: Span::from(target.span),
                         string: self.view_span(target.span),
                     },
+                    canonical_name: String::default(),
                     context,
 
-                    // mark as false by default. we do not know yet.
-                    is_global_use: false,
-                    is_template_context_use: false,
+                    // mark as unknown by default. we do not know yet.
+                    r#type: SymbolUseType::Unknown,
                 });
             }
 
@@ -863,7 +891,7 @@ where
         &mut self,
         context: usize,
         body: &OxcFunctionBody<'a>,
-        uses: &mut Vec<SymbolUse>,
+        uses: &mut HashMap<usize, Vec<SymbolUse>>,
     ) -> OxcSpan {
         // NOTE: we do NOT create a new context here. instead, we use the context passed in to the
         // parameter. this is done, so creation of the context and scanning the function body can
@@ -886,7 +914,7 @@ where
         &mut self,
         context: usize,
         params: &OxcFormalParameters<'a>,
-        uses: &mut Vec<SymbolUse>,
+        uses: &mut HashMap<usize, Vec<SymbolUse>>,
     ) {
         /*
          * struct oxc_ast::ast::FormalParameters<'a>
@@ -910,6 +938,8 @@ where
             self.binding(
                 context,
                 Symbol::Parameter {
+                    source_name: String::default(),
+                    canonical_name: String::default(),
                     span: param.span,
                     optional: param.optional,
                     order,
@@ -936,7 +966,11 @@ where
              */
             self.binding(
                 context,
-                Symbol::ParameterRest { span: rest.span },
+                Symbol::ParameterRest {
+                    span: rest.span,
+                    source_name: String::default(),
+                    canonical_name: String::default(),
+                },
                 &rest.rest.argument,
                 uses,
             );
@@ -948,7 +982,7 @@ where
         context: usize,
         callee: &OxcExpression<'a>,
         args: &OxcVec<'a, OxcArgument<'a>>,
-        uses: &mut Vec<SymbolUse>,
+        uses: &mut HashMap<usize, Vec<SymbolUse>>,
     ) {
         self.expression(context, callee, uses);
 
@@ -984,9 +1018,9 @@ where
     fn binding(
         &mut self,
         context: usize,
-        symbol: Symbol,
+        mut symbol: Symbol,
         pattern: &OxcBindingPattern<'a>,
-        uses: &mut Vec<SymbolUse>,
+        uses: &mut HashMap<usize, Vec<SymbolUse>>,
     ) {
         /*
          * enum oxc_ast::ast::BindingPattern<'a>
@@ -1002,7 +1036,46 @@ where
                  * struct oxc_ast::ast::BindingIdentifier<'a>
                  * - name: Ident<'a>
                  */
-                self.insert_in_context(context, ident.name.to_string(), symbol)
+
+                let canonical_name =
+                    utils::normalize_case(&ident.name, utils::Case::SnakeCase);
+
+                if self.context_tree[context]
+                    .symbols
+                    .contains_key(&canonical_name)
+                {
+                    // TODO: diagnostics
+                    println!("Name collision for identifier {}", &ident.name);
+                } else {
+                    match &mut symbol {
+                        Symbol::Variable(v) => {
+                            v.source_name = ident.name.to_string();
+                            v.canonical_name = canonical_name.clone();
+                        }
+
+                        Symbol::Parameter {
+                            source_name,
+                            canonical_name,
+                            ..
+                        } => {
+                            *source_name = ident.name.to_string();
+                            *canonical_name = canonical_name.clone();
+                        }
+
+                        Symbol::ParameterRest {
+                            source_name,
+                            canonical_name,
+                            ..
+                        } => {
+                            *source_name = ident.name.to_string();
+                            *canonical_name = canonical_name.clone();
+                        }
+
+                        _ => unreachable!(),
+                    }
+
+                    self.insert_in_context(context, canonical_name, symbol);
+                }
             }
 
             OxcBindingPattern::ObjectPattern(obj) => {
@@ -1058,7 +1131,7 @@ where
         &mut self,
         context: usize,
         expr: &OxcMemberExpression<'a>,
-        uses: &mut Vec<SymbolUse>,
+        uses: &mut HashMap<usize, Vec<SymbolUse>>,
     ) {
         /*
          * enum oxc_ast::ast::MemberExpression<'a>
@@ -1100,7 +1173,7 @@ where
         &mut self,
         context: usize,
         stmt: &OxcStatement<'a>,
-        uses: &mut Vec<SymbolUse>,
+        uses: &mut HashMap<usize, Vec<SymbolUse>>,
     ) {
         match stmt {
             // these need not be visited
@@ -1118,6 +1191,7 @@ where
                  */
 
                 let new_context = self.create_context(context);
+                uses.insert(new_context, Vec::new());
                 self.statements(new_context, &stmt.body, uses);
             }
 
@@ -1149,6 +1223,7 @@ where
                  */
 
                 let new_context = self.create_context(context);
+                uses.insert(new_context, Vec::new());
 
                 match &stmt.left {
                     /*
@@ -1185,6 +1260,7 @@ where
                  */
 
                 let new_context = self.create_context(context);
+                uses.insert(new_context, Vec::new());
 
                 match &stmt.left {
                     /*
@@ -1222,6 +1298,7 @@ where
                  */
 
                 let new_context = self.create_context(context);
+                uses.insert(new_context, Vec::new());
 
                 if let Some(init) = &stmt.init {
                     match init {
@@ -1289,6 +1366,7 @@ where
                  */
 
                 let new_context = self.create_context(context);
+                uses.insert(new_context, Vec::new());
 
                 self.expression(context, &stmt.discriminant, uses);
 
@@ -1324,6 +1402,7 @@ where
                  */
 
                 let try_context = self.create_context(context);
+                uses.insert(try_context, Vec::new());
                 self.statements(try_context, &stmt.block.body, uses);
 
                 if let Some(catch) = &stmt.handler {
@@ -1338,9 +1417,12 @@ where
                         // on the contex tree, but it gets the job done without over-complicating the
                         // signatures or structures
                         let new_context = self.create_context(context);
+                        uses.insert(new_context, Vec::new());
                         self.binding(
                             new_context,
                             Symbol::Parameter {
+                                source_name: String::default(),
+                                canonical_name: String::default(),
                                 span: param.span,
                                 type_annotation: None,
                                 optional: false,
@@ -1360,6 +1442,7 @@ where
 
                 if let Some(fin) = &stmt.finalizer {
                     let fin_context = self.create_context(context);
+                    uses.insert(fin_context, Vec::new());
                     self.statements(fin_context, &fin.body, uses);
                 }
             }
@@ -1401,6 +1484,7 @@ where
                  */
 
                 let new_context = self.create_context(context);
+                uses.insert(new_context, Vec::new());
 
                 self.formal_parameters(new_context, &stmt.params, uses);
 
@@ -1423,16 +1507,35 @@ where
                 };
 
                 if let Some(id) = &stmt.id {
-                    self.insert_in_context(
+                    let canonical_name =
+                        utils::normalize_case(&id.name, utils::Case::SnakeCase);
+
+                    if self.context_tree[context]
+                        .symbols
+                        .contains_key(&canonical_name)
+                    {
+                        // TODO: diagnostics
+                        println!(
+                            "Name collision for function name {}",
+                            id.name
+                        );
+                    }
+
+                    let body = self.insert_in_context(
                         context,
                         id.name.to_string(),
                         Symbol::Function(Function {
-                            name: id.name.to_string(),
-                            context: context,
+                            source_name: id.name.to_string(),
+                            canonical_name,
+                            context: new_context,
+                            params: self.view_span(stmt.params.span()),
                             body: if let Some(b) = body {
-                                Some(self.view_span(b))
+                                SpannedString {
+                                    span: Span::from(b),
+                                    string: self.view_span(b),
+                                }
                             } else {
-                                None
+                                SpannedString::default()
                             },
                             return_type,
                             generics,
@@ -1656,7 +1759,7 @@ where
         context: usize,
         decl: &OxcVariableDeclaration<'a>,
         is_export: bool,
-        uses: &mut Vec<SymbolUse>,
+        uses: &mut HashMap<usize, Vec<SymbolUse>>,
     ) {
         let is_let = matches!(decl.kind, VariableDeclarationKind::Let);
 
@@ -1675,7 +1778,7 @@ where
 
             let init = if let Some(init) = &decl.init {
                 self.expression(context, init, uses);
-                Some(Span::from(init.span()))
+                Some(init.span())
             } else {
                 None
             };
@@ -1683,11 +1786,13 @@ where
             self.binding(
                 context,
                 Symbol::Variable(Variable {
+                    source_name: String::default(),
+                    canonical_name: String::default(),
                     span: Span::from(decl.span),
                     type_annotation: r#type,
                     is_state: false,
                     is_let,
-                    init,
+                    init: init.map(|init| self.view_span(init)),
                     is_export,
                 }),
                 &decl.id,
@@ -2042,7 +2147,7 @@ where
         &mut self,
         context: usize,
         stmts: &OxcVec<'a, OxcStatement<'a>>,
-        uses: &mut Vec<SymbolUse>,
+        uses: &mut HashMap<usize, Vec<SymbolUse>>,
     ) {
         for stmt in stmts {
             self.statement(context, stmt, uses)
@@ -2053,25 +2158,33 @@ where
         self.current_source[span.start as usize..span.end as usize].to_string()
     }
 
-    pub fn is_global_symbol(&self, symbol: &String, context: usize) -> bool {
+    pub fn classify_symbol_use(
+        &self,
+        symbol: &String,
+        context: usize,
+    ) -> SymbolUseType {
         let ctxt = self.context_tree.get(context).unwrap();
 
         if ctxt.symbols.contains_key(symbol) {
-            context == 0
+            if context == 0 {
+                SymbolUseType::GlobalUnresolved
+            } else {
+                SymbolUseType::Local
+            }
         } else {
             if context == 0 {
-                false
+                SymbolUseType::Unknown
             } else {
-                self.is_global_symbol(symbol, ctxt.parent)
+                self.classify_symbol_use(symbol, ctxt.parent)
             }
         }
     }
 
-    pub fn analyze_script(
+    pub fn parse_script(
         &mut self,
         script: &String,
         oxc_allocator: &'a OxcAllocator,
-    ) -> Vec<SymbolUse> {
+    ) -> HashMap<usize, Vec<SymbolUse>> {
         let body = Self::parse(script, oxc_allocator);
         self.current_source = script.clone();
 
@@ -2079,18 +2192,12 @@ where
             self.create_context(0);
         }
 
-        let mut uses = Vec::new();
+        let mut uses = HashMap::new();
+        uses.insert(0, Vec::new());
 
         self.statements(0, &body, &mut uses);
 
-        // collect global uses
-        let global_uses = uses
-            .iter()
-            .filter(|u| self.is_global_symbol(&u.r#use.string, u.context))
-            .cloned()
-            .collect();
-
-        global_uses
+        uses
     }
 
     pub fn analyze(
@@ -2099,7 +2206,7 @@ where
         oxc_allocator: &'a OxcAllocator,
     ) {
         module.symbol_uses =
-            self.analyze_script(&module.script.1, &oxc_allocator);
+            self.parse_script(&module.script.1, &oxc_allocator);
 
         self.analyze_expressions(&mut module.expressions);
 
@@ -2125,7 +2232,9 @@ where
 
                 // modify existing entires (populated by the preprocessor)
                 Symbol::Function(func) => {
-                    if let Some(f) = module.metadata.get_mut(&func.name) {
+                    if let Some(f) =
+                        module.metadata.get_mut(&func.canonical_name)
+                    {
                         match f {
                             ModuleMemberType::Event(e) => {
                                 *e = Some(func.clone())
@@ -2143,7 +2252,7 @@ where
                         }
                     } else {
                         module.metadata.insert(
-                            func.name.clone(),
+                            func.canonical_name.clone(),
                             ModuleMemberType::Function(func.clone()),
                         );
                     }
@@ -2173,6 +2282,50 @@ where
                 _ => unreachable!(),
             }
         }
+
+        self.analyze_script(module);
+    }
+
+    pub fn analyze_script(&mut self, module: &'a mut Module) {
+        println!("metadata so far: {:?}", module.metadata);
+        for (context, context_uses) in module.symbol_uses.iter_mut() {
+            for symbol_use in context_uses {
+                let use_type = self
+                    .classify_symbol_use(&symbol_use.r#use.string, *context);
+
+                if matches!(use_type, SymbolUseType::GlobalUnresolved)
+                    && let Some(member) =
+                        module.metadata.get(&symbol_use.r#use.string)
+                {
+                    println!("hmmm.... {}", &symbol_use.r#use.string);
+                    match &member {
+                        ModuleMemberType::Event(_)
+                        | ModuleMemberType::Command(_)
+                        | ModuleMemberType::Reactive(_)
+                        | ModuleMemberType::Function(_)
+                        | ModuleMemberType::RenamedEvent { .. }
+                        | ModuleMemberType::ExposedEvent { .. } => {
+                            symbol_use.r#type = SymbolUseType::GlobalFunction
+                        }
+
+                        ModuleMemberType::PrivateState(_)
+                        | ModuleMemberType::PublicState(_)
+                        | ModuleMemberType::StateProxy { .. } => {
+                            symbol_use.r#type = SymbolUseType::GlobalState
+                        }
+
+                        ModuleMemberType::PrivateVariable(_)
+                        | ModuleMemberType::PublicVariable(_) => {
+                            symbol_use.r#type = SymbolUseType::GlobalVariable
+                        }
+
+                        _ => continue,
+                    }
+                }
+            }
+        }
+
+        println!("SYMBOL_USES: {:?}", module.symbol_uses);
     }
 
     pub fn analyze_expressions(
@@ -2184,28 +2337,43 @@ where
             for _use in &mut expr.symbol_uses {
                 let use_name = &_use.r#use.string;
 
-                if expr.context_vars.contains(&use_name) {
-                    _use.is_template_context_use = true;
+                let canonical_use_name =
+                    utils::normalize_case(use_name, utils::Case::SnakeCase);
 
-                    // set global_use to false, purely as an invariant
-                    _use.is_global_use = false;
-                } else if self.is_global_symbol(&use_name, _use.context) {
-                    if let Some(Symbol::Variable(v)) = self
-                        .context_tree
-                        .get_mut(0)
-                        .unwrap()
-                        .symbols
-                        .get_mut(use_name)
-                    {
-                        // if a variable occurs in the template, it must be made into a state
-                        // but only if the variable itself is defined using `let` syntax
-                        v.is_state = v.is_let;
+                if expr.context_vars.contains(&use_name) {
+                    _use.r#type = SymbolUseType::TemplateContext;
+                } else {
+                    let use_type = self
+                        .classify_symbol_use(&canonical_use_name, _use.context);
+
+                    match use_type {
+                        SymbolUseType::GlobalUnresolved => {
+                            if let Some(Symbol::Variable(v)) = self
+                                .context_tree
+                                .get_mut(0)
+                                .unwrap()
+                                .symbols
+                                .get_mut(use_name)
+                            {
+                                // if a variable occurs in the template, it must be made into a state
+                                // but only if the variable itself is defined using `let` syntax
+                                v.is_state = v.is_let;
+
+                                if v.is_state {
+                                    _use.r#type = SymbolUseType::GlobalState;
+                                } else {
+                                    _use.r#type = SymbolUseType::GlobalVariable;
+                                }
+                            } else {
+                                // not a variable, but is global. must be a function.
+                                _use.r#type = SymbolUseType::GlobalFunction;
+                            }
+                        }
+
+                        _ => _use.r#type = use_type,
                     }
 
-                    _use.is_global_use = true;
-
-                    // set template_context_use to false, purely as an invariant
-                    _use.is_template_context_use = false;
+                    _use.canonical_name = canonical_use_name;
                 }
             }
         }
@@ -2231,6 +2399,17 @@ where
                 if matches!(&expr.expression, OxcExpression::Identifier(_))
             );
 
-        self.statements(0, &body, &mut expr.symbol_uses);
+        let mut uses = HashMap::new();
+        uses.insert(0, Vec::new());
+
+        self.statements(0, &body, &mut uses);
+
+        let mut flat_uses = Vec::new();
+
+        for ctxt in uses.values_mut() {
+            flat_uses.extend(std::mem::take(ctxt));
+        }
+
+        expr.symbol_uses = flat_uses;
     }
 }

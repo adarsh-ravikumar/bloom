@@ -1,12 +1,13 @@
 use crate::{
     analysis::{AttributeAnalyzer, ExpressionAnalyzer, ModuleContext},
+    codegen::GenerateTemplateJs,
     common::Source,
     ir::TemplateIrGen,
     module::{Module, ModuleRegistry, ModuleType},
 };
 
-// mod codegen;
 mod analysis;
+mod codegen;
 mod common;
 mod diagnostic;
 // mod discover;
@@ -94,6 +95,7 @@ fn main() {
             attribute_analyzer.visit_module(&module.root, &context);
         }
 
+        println!("Interface Delta: {:?}", attribute_analyzer.interface_delta);
         attribute_analyzer.interface_delta
     };
 
@@ -104,6 +106,8 @@ fn main() {
             let module = &mut registry.modules[*module];
             expression_analyzer.analyze(&module.name, &mut module.expressions);
         }
+
+        registry.apply_delta(interface_delta);
     };
 
     println!("\nPerforming Intermediate Representation Generation");
@@ -115,6 +119,7 @@ fn main() {
             "\nExpressions after semantic pass in module {}",
             module.name
         );
+
         println!("{:?}", module.expressions);
 
         println!("\nGenerating module {}", module.name);
@@ -126,6 +131,19 @@ fn main() {
             for node in &ir_gen.ir_nodes {
                 println!("{node:?}");
             }
+
+            println!("\nCodegen Result:\n");
+            let mut codegen = GenerateTemplateJs::new(
+                &ir_gen.ir_nodes,
+                &module.name,
+                &module.metadata,
+                &module.symbol_uses,
+                &module.expressions,
+            );
+
+            let res = codegen.generate();
+
+            println!("{res}");
         }
     }
 }

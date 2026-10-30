@@ -7,6 +7,7 @@ use crate::{
         Attribute, AttributeValue, BindingAttribute, Fragment, FragmentNode,
         RegularAttribute,
     },
+    utils,
 };
 
 pub struct AttributeAnalyzer<'a> {
@@ -119,7 +120,12 @@ impl<'a> AttributeAnalyzer<'a> {
 
         // event
         if attrib.bind_from.string == "on" {
-            let event = widget_module.get(&attrib.bind_to.string);
+            let canonical_name = utils::normalize_case(
+                &attrib.bind_to.string,
+                utils::Case::SnakeCase,
+            );
+
+            let event = widget_module.get(&canonical_name);
 
             if event.is_none() {
                 // TODO: diagnostics
@@ -135,9 +141,15 @@ impl<'a> AttributeAnalyzer<'a> {
                         let expr = &current_module.expressions[*e];
                         if expr.is_lone_identifier {
                             // check if this member exists in the current module
-                            let event_name = expr.source.string.trim();
+                            let event_name = utils::normalize_case(
+                                expr.source.string.trim(),
+                                utils::Case::SnakeCase,
+                            );
 
-                            if current_module.metadata.get(event_name).is_some()
+                            if current_module
+                                .metadata
+                                .get(&event_name)
+                                .is_some()
                             {
                                 // remap case. nothing to do.
                                 println!(
@@ -148,13 +160,11 @@ impl<'a> AttributeAnalyzer<'a> {
                                 // rename case
                                 println!(
                                     "renaming event `{}` to `{}`. this introduces `{}` into current scope",
-                                    attrib.bind_to.string,
-                                    event_name,
-                                    event_name
+                                    canonical_name, event_name, event_name
                                 );
 
                                 if let Some(member) = self
-                                    .member_exists(current_module, event_name)
+                                    .member_exists(current_module, &event_name)
                                 {
                                     println!(
                                         "Cannot rename event to `{event_name}`. Member already exists `{member:?}`",
@@ -174,6 +184,11 @@ impl<'a> AttributeAnalyzer<'a> {
                                     );
                             }
                         }
+                    } else {
+                        // TODO: diagnostics
+                        println!(
+                            "Binding value for an event must be an expression"
+                        );
                     }
                 }
 
@@ -184,12 +199,11 @@ impl<'a> AttributeAnalyzer<'a> {
 
                     let id = id.as_ref().unwrap();
 
-                    println!(
-                        "exposing event `{}`. this introduces `{id}_{}` into the current scope",
-                        attrib.bind_to.string, attrib.bind_to.string
-                    );
+                    let event_name = format!("{id}_{}", canonical_name);
 
-                    let event_name = format!("{id}_{}", attrib.bind_to.string);
+                    println!(
+                        "exposing event `{canonical_name}`. this introduces `{event_name}` into the current scope",
+                    );
 
                     if let Some(member) =
                         self.member_exists(current_module, &event_name)
@@ -207,7 +221,7 @@ impl<'a> AttributeAnalyzer<'a> {
                             event_name.clone(),
                             ModuleMemberType::ExposedEvent {
                                 prefix: id.to_string(),
-                                event: event_name,
+                                event: canonical_name,
                             },
                         );
                 }
@@ -305,9 +319,11 @@ impl<'a> AttributeAnalyzer<'a> {
                         // TODO: diagnostics
                         println!("ID must be the first attribute");
                     } else {
-                        let id_str = expr.source.string.trim().to_string();
+                        let id_str = utils::normalize_case(
+                            expr.source.string.trim(),
+                            utils::Case::SnakeCase,
+                        );
 
-                        println!("id: {id_str}");
                         if let Some(site) = self.id_set.get(&id_str) {
                             println!(
                                 // TODO: diagnostics

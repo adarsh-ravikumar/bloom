@@ -1,15 +1,17 @@
 <script>
   let uhh;
+
+  function hover() {
+     console.log("hover again?");
+  }
+
 </script>
 
-<:button click:tap >
-  <text id={this_is_an_id} test={uhh} on:hover on:click={testing} value:abc attrib:testing> 
+<:button on:click={tap} on:hover={hover} testing={123} lol="123?{123}" {uhh}>
+  <text id={HTTPServer} on:hover on:click={testing} value:abc on:longEventName attrib_that_must_fold="123"> 
     Hello!
-
-    {#if abc}
-      {abc}
-    {/if}
-
   </text>
+
+  {uhm}
 </:button>
 

@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet, hash_map::Keys};
+use std::{
+    collections::{HashMap, HashSet, hash_map::Keys},
+    hash::Hash,
+};
 
 use crate::module::{
     self, Module, ModuleMemberType, ModuleMetadata, ModuleType,
@@ -117,5 +120,13 @@ impl<'a> ModuleRegistry {
         dependency_list.push(module_index);
     }
 
-    // visit module
+    pub fn apply_delta(&mut self, delta: HashMap<String, ModuleMetadata>) {
+        for (module, delta) in delta {
+            let module = &mut self.modules[*self.lookup.get(&module).unwrap()];
+
+            for (name, member) in delta {
+                module.metadata.insert(name, member);
+            }
+        }
+    }
 }

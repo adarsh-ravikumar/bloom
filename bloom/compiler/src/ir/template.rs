@@ -1,5 +1,5 @@
 use crate::{
-    module::{ExpressionId, ModuleRegistry},
+    module::ExpressionId,
     parser::{
         Attribute, AttributeValue, Control, EachControl, Fragment,
         FragmentNode, IfControl, Part, Parts, Widget,
@@ -20,8 +20,8 @@ type NodeId = usize;
 #[derive(Debug, Clone)]
 pub enum IrNode {
     StartParts { id: NodeId },
-    Text { value: String, id: NodeId, parent: NodeId },
-    Expression { id: NodeId, expr_id: ExpressionId, parent: NodeId },
+    Text { value: String },
+    Expression { expr_id: ExpressionId },
     EndParts { id: NodeId, parent: NodeId },
 
     StartWidget { name: String, id: NodeId, is_platform: bool },
@@ -29,8 +29,9 @@ pub enum IrNode {
 
     StartAttributeList,
     AttributeName { name: String, id: NodeId },
-    AttributeBindEvent { event: String, has_value: bool, id: NodeId },
-    AttributeBindState { from: String, to: String, id: NodeId },
+    AttributeBindEvent { event: String, id: NodeId },
+    AttributeExposeEvent { event: String, widget_id: ExpressionId, id: NodeId },
+    AttributeBindState { from: String, to: String, id: NodeId, has_value: bool},
     AttributeTrue,
     EndAttributeList,
 
@@ -47,16 +48,25 @@ pub enum IrNode {
 fn sanitize_text(text: String) -> String {
     let mut san = Vec::new();
 
+    // NOTE: we santize `$` to ensure `${` in text doesn't open
+    // an expression in a template literal
     for char in &text.into_bytes() {
-        if *char == b'\'' {
-            san.push(b'\\');
-            san.push(b'\'');
+        if *char == b'\\' {
+            san.extend_from_slice(b"\\\\");
+        } else if *char == b'$' {
+            san.extend_from_slice(b"\\$");
         } else if *char == b'"' {
-            san.push(b'\\');
-            san.push(b'"');
+            san.extend_from_slice(b"\\\"");
         } else if *char == b'`' {
-            san.push(b'\\');
-            san.push(b'`');
+            san.extend_from_slice(b"\\`");
+        } else if *char == b'\'' {
+            san.extend_from_slice(b"\\'");
+        } else if *char == b'\n' {
+            san.extend_from_slice(b"\\n");
+        } else if *char == b'\t' {
+            san.extend_from_slice(b"\\t");
+        } else if *char == b'\r' {
+            san.extend_from_slice(b"\\r");
         } else {
             san.push(*char);
         }
@@ -84,24 +94,14 @@ impl<'a> TemplateIrGen<'a> {
         self.ir_nodes.push(node)
     }
 
-    fn visit_text(&mut self, value: String, parent: NodeId) {
-        let id = self.get_node_id();
-
+    fn visit_text(&mut self, value: String) {
         self.emit_node(IrNode::Text {
-            id,
             value: sanitize_text(value),
-            parent,
         });
     }
 
-    fn visit_expression(&mut self, expr_id: ExpressionId, parent: NodeId) {
-        let id = self.get_node_id();
-
-        self.emit_node(IrNode::Expression {
-            expr_id,
-            id,
-            parent,
-        });
+    fn visit_expression(&mut self, expr_id: ExpressionId) {
+        self.emit_node(IrNode::Expression { expr_id });
     }
 
     fn visit_parts(&mut self, parts: &Parts, parent: NodeId) {
@@ -111,9 +111,9 @@ impl<'a> TemplateIrGen<'a> {
 
         for part in parts {
             match part {
-                Part::Text(string) => self.visit_text(string.clone(), id),
+                Part::Text(string) => self.visit_text(string.clone()),
                 Part::Expression(expr_id) => {
-                    self.visit_expression(*expr_id, id);
+                    self.visit_expression(*expr_id);
                 }
             }
         }
@@ -131,7 +131,7 @@ impl<'a> TemplateIrGen<'a> {
             AttributeValue::Parts(parts) => self.visit_parts(parts, parent),
 
             AttributeValue::Expression(expr) => {
-                self.visit_expression(*expr, parent);
+                self.visit_expression(*expr);
             }
         }
     }
@@ -147,7 +147,22 @@ impl<'a> TemplateIrGen<'a> {
 
         self.emit_node(IrNode::StartAttributeList);
 
-        // TODO: attribute list
+        /* NOTE: Attribute analysis guarantees that if a widget has an id, then it is the
+         * first attribute, its value is an expression, and that expression is a lone identifier.
+         * If no `id` attribute exists, the widget cannot have exposed events. So widget_id will never
+         * be consumed. In that case `0` is a harmless default rather than an actual expression ID
+         */
+        let widget_id = if let Some(id_attrib_candidate) =
+            widget.attributes.first()
+            && let Attribute::Regular(attrib) = id_attrib_candidate
+            && attrib.name.string == "id"
+            && let AttributeValue::Expression(expr) = &attrib.value
+        {
+            *expr
+        } else {
+            0
+        };
+
         for attrib in &widget.attributes {
             match attrib {
                 Attribute::Regular(attrib) => {
@@ -161,15 +176,23 @@ impl<'a> TemplateIrGen<'a> {
 
                 Attribute::Binding(attrib) => {
                     if attrib.bind_from.string == "on" {
-                        self.ir_nodes.push(IrNode::AttributeBindEvent {
-                            event: attrib.bind_to.string.clone(),
-                            has_value: attrib.value.is_some(),
-                            id,
-                        })
+                        if attrib.value.is_some() {
+                            self.ir_nodes.push(IrNode::AttributeBindEvent {
+                                event: attrib.bind_to.string.clone(),
+                                id,
+                            })
+                        } else {
+                            self.ir_nodes.push(IrNode::AttributeExposeEvent {
+                                event: attrib.bind_to.string.clone(),
+                                widget_id,
+                                id,
+                            })
+                        }
                     } else {
                         self.ir_nodes.push(IrNode::AttributeBindState {
                             from: attrib.bind_from.string.clone(),
                             to: attrib.bind_to.string.clone(),
+                            has_value: attrib.value.is_some(),
                             id,
                         })
                     }
@@ -262,11 +285,9 @@ impl<'a> TemplateIrGen<'a> {
     fn visit_fragment(&mut self, frag: &Fragment, parent: NodeId) {
         for node in &frag.nodes {
             match node {
-                FragmentNode::Text(value) => {
-                    self.visit_text(value.clone(), parent)
-                }
+                FragmentNode::Text(value) => self.visit_text(value.clone()),
                 FragmentNode::Expression(expr) => {
-                    self.visit_expression(*expr, parent);
+                    self.visit_expression(*expr);
                 }
                 FragmentNode::Widget(widget) => {
                     self.visit_widget(widget, parent)

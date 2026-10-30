@@ -23,7 +23,7 @@ pub struct Module {
     pub name: String,
     pub metadata: ModuleMetadata,
     pub dependencies: HashMap<String, Span>, // store the span of the first occurance
-    pub symbol_uses: Vec<SymbolUse>,
+    pub symbol_uses: HashMap<usize, Vec<SymbolUse>>,
     pub expressions: Vec<Expression>,
 }
 
@@ -36,7 +36,7 @@ impl Default for Module {
             metadata: ModuleMetadata::new(),
             name: String::new(),
             dependencies: HashMap::new(),
-            symbol_uses: Vec::new(),
+            symbol_uses: HashMap::new(),
             expressions: Vec::new(),
         }
     }
