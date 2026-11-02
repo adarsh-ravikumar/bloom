@@ -369,6 +369,41 @@ impl<'a> Parser<'a> {
                 continue;
             }
 
+            // handle comments
+            if cur == b'/' {
+                if self.peek(1) == b'/' {
+                    self.consume(2);
+
+                    while !matches!(self.peek(0), b'\n' | b'\0') {
+                        self.consume(1);
+                    }
+
+                    continue;
+                } else if self.peek(1) == b'*' {
+                    self.consume(2);
+
+                    loop {
+                        if self.peek(0) == b'\0' {
+                            // TODO: diagnostics
+                            println!("block comment was never closed");
+                            return SpannedString::default();
+                        }
+
+                        if self.peek(0) == b'*' && self.peek(1) == b'/' {
+                            self.consume(2);
+                            break;
+                        }
+
+                        self.consume(1);
+                    }
+
+                    continue;
+                }
+
+                continue;
+            }
+
+            // handle braces
             if cur == b'{' && quote.is_none() {
                 num_braces += 1;
             }
