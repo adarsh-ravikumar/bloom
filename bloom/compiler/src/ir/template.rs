@@ -1,15 +1,19 @@
+use std::collections::HashMap;
+
 use crate::{
+    analysis::PlatformNamespace,
     module::ExpressionId,
     parser::{
         Attribute, AttributeValue, Control, EachControl, Fragment,
         FragmentNode, IfControl, Part, Parts, Widget,
     },
+    utils,
 };
 
 #[derive(Debug, Clone)]
 pub struct TemplateIrGen<'a> {
     pub ir_nodes: Vec<IrNode>,
-
+    // exposed_event_map: &'a HashMap<String, Option<String>>,
     ast: &'a Fragment,
     next_node_id: usize,
 }
@@ -30,7 +34,7 @@ pub enum IrNode {
     StartAttributeList,
     AttributeName { name: String, id: NodeId },
     AttributeBindEvent { event: String, id: NodeId },
-    AttributeExposeEvent { event: String, widget_id: ExpressionId, id: NodeId },
+    AttributeExposeEvent { source_event: String,  id: NodeId, widget_id: ExpressionId},
     AttributeBindState { from: String, to: String, id: NodeId, has_value: bool},
     AttributeTrue,
     EndAttributeList,
@@ -182,8 +186,13 @@ impl<'a> TemplateIrGen<'a> {
                                 id,
                             })
                         } else {
+                            let source_event = utils::normalize_case(
+                                &attrib.bind_to.string,
+                                utils::Case::SnakeCase,
+                            );
+
                             self.ir_nodes.push(IrNode::AttributeExposeEvent {
-                                event: attrib.bind_to.string.clone(),
+                                source_event,
                                 widget_id,
                                 id,
                             })

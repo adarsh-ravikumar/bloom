@@ -29,6 +29,16 @@ fn main() {
             Source::from_path("sandbox/widgets/text.bloom").unwrap(),
         ),
         // (
+        //     "counter",
+        //     ModuleType::Widget,
+        //     Source::from_path("sandbox/widgets/counter.bloom").unwrap(),
+        // ),
+        // (
+        //     "view",
+        //     ModuleType::Widget,
+        //     Source::from_path("sandbox/widgets/view.bloom").unwrap(),
+        // ),
+        // (
         //     "column",
         //     ModuleType::Widget,
         //     Source::from_path("sandbox/widgets/column.bloom").unwrap(),
@@ -48,17 +58,12 @@ fn main() {
         //     ModuleType::Panel,
         //     Source::from_path("sandbox/panels/inspector.bloom").unwrap(),
         // ),
-        // (
-        //     "counter",
-        //     ModuleType::Widget,
-        //     Source::from_path("sandbox/widgets/counter.bloom").unwrap(),
-        // ),
     ];
 
     let mut registry = ModuleRegistry::new();
 
     for (name, r#type, source) in &sources {
-        println!("\nAnalyzing module[{:?}]: {}", r#type, name);
+        println!("\n Frontend analysis on module[{:?}]: {}", r#type, name);
         Module::frontend_analysis(
             &mut registry,
             name.to_string(),
@@ -67,24 +72,26 @@ fn main() {
         );
     }
 
-    println!("\nPerforming dependency analysis:");
+    // println!("\nPerforming dependency analysis:");
     let order = registry.analyze_dependencies();
 
-    println!("{order:?}");
+    // println!("{order:?}");
 
-    println!("\nPerforming template analysis:");
+    // println!("\nPerforming template analysis:");
 
-    let interface_delta = {
+    let (interface_delta, exposed_events_map) = {
         let mut attribute_analyzer = AttributeAnalyzer::new(&registry);
 
         for module in &order {
             let module = &registry.modules[*module];
 
-            println!(
-                "\nExpressions before semantic pass in module {}",
-                module.name
-            );
-            println!("{:?}", module.expressions);
+            println!("\n Attribute analysis on module: {}", module.name);
+
+            // println!(
+            //     "\nExpressions before semantic pass in module {}",
+            //     module.name
+            // );
+            // println!("{:?}", module.expressions);
 
             let context = ModuleContext {
                 name: &module.name,
@@ -95,8 +102,15 @@ fn main() {
             attribute_analyzer.visit_module(&module.root, &context);
         }
 
-        println!("Interface Delta: {:?}", attribute_analyzer.interface_delta);
-        attribute_analyzer.interface_delta
+        // println!(
+        //     "\n\nInterface Delta: {:?}",
+        //     attribute_analyzer.interface_delta
+        // );
+
+        (
+            attribute_analyzer.interface_delta,
+            attribute_analyzer.exposed_event_map,
+        )
     };
 
     {
@@ -104,41 +118,43 @@ fn main() {
 
         for module in &order {
             let module = &mut registry.modules[*module];
+            println!("\n Expression analysis on module: {}", module.name);
             expression_analyzer.analyze(&module.name, &mut module.expressions);
         }
 
         registry.apply_delta(interface_delta);
     };
 
-    println!("\nPerforming Intermediate Representation Generation");
+    // println!("\nPerforming Intermediate Representation Generation");
 
     for module in &order {
         let module = &mut registry.modules[*module];
 
-        println!(
-            "\nExpressions after semantic pass in module {}",
-            module.name
-        );
+        // println!(
+        //     "\nExpressions after semantic pass in module {}",
+        //     module.name
+        // );
 
-        println!("{:?}", module.expressions);
+        // println!("{:?}", module.expressions);
 
-        println!("\nGenerating module {}", module.name);
+        // println!("\nGenerating module {}", module.name);
 
         if let Some(root) = &module.root {
             let mut ir_gen = TemplateIrGen::new(root);
             ir_gen.generate_ir();
 
-            for node in &ir_gen.ir_nodes {
-                println!("{node:?}");
-            }
-
-            println!("\nCodegen Result:\n");
+            // for node in &ir_gen.ir_nodes {
+            //     println!("{node:?}");
+            // }
+            //
+            // println!("\nCodegen Result:\n");
             let mut codegen = GenerateTemplateJs::new(
                 &ir_gen.ir_nodes,
                 &module.name,
                 &module.metadata,
                 &module.symbol_uses,
                 &module.expressions,
+                &exposed_events_map,
             );
 
             let res = codegen.generate();

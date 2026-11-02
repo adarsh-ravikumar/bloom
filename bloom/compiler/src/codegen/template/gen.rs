@@ -19,6 +19,7 @@ pub struct GenerateTemplateJs<'a> {
     expressions: &'a [Expression],
     module_name: &'a str,
     buffer: String,
+    exposed_event_map: &'a HashMap<String, Option<String>>,
 }
 
 macro_rules! write_buffer {
@@ -34,6 +35,7 @@ impl<'a> GenerateTemplateJs<'a> {
         metadata: &'a ModuleMetadata,
         symbol_uses: &'a HashMap<usize, Vec<SymbolUse>>,
         expressions: &'a [Expression],
+        exposed_event_map: &'a HashMap<String, Option<String>>,
     ) -> Self {
         Self {
             ir,
@@ -42,6 +44,7 @@ impl<'a> GenerateTemplateJs<'a> {
             symbol_uses,
             expressions,
             buffer: String::new(),
+            exposed_event_map,
         }
     }
 
@@ -223,7 +226,6 @@ impl<'a> GenerateTemplateJs<'a> {
                     write_buffer!(self, "const w{id} = new ",);
 
                     if *is_platform {
-                        let name = &name[1..];
                         write_buffer!(self, "Platform(\"{name}\");\n");
                     } else {
                         write_buffer!(
@@ -299,17 +301,25 @@ impl<'a> GenerateTemplateJs<'a> {
                 }
 
                 IrNode::AttributeExposeEvent {
-                    event,
+                    source_event,
                     widget_id,
                     id,
                 } => {
-                    let event_name = format!(
-                        "{}_{event}",
+                    let canonical_event_name = format!(
+                        "{}_{source_event}",
                         &self.expressions[*widget_id].source.string,
                     );
 
+                    let event_name = if let Some(name) =
+                        self.exposed_event_map.get(&canonical_event_name)
+                    {
+                        name.as_deref().unwrap_or(&canonical_event_name)
+                    } else {
+                        &canonical_event_name
+                    };
+
                     let event_string = utils::normalize_case(
-                        &event_name,
+                        &source_event,
                         utils::Case::SnakeCase,
                     );
 

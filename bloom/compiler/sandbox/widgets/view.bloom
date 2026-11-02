@@ -1,0 +1,1 @@
+<counter id={counter} on:button_hover on:button_focus />

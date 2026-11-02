@@ -2287,7 +2287,6 @@ where
     }
 
     pub fn analyze_script(&mut self, module: &'a mut Module) {
-        println!("metadata so far: {:?}", module.metadata);
         for (context, context_uses) in module.symbol_uses.iter_mut() {
             for symbol_use in context_uses {
                 let use_type = self
@@ -2297,7 +2296,6 @@ where
                     && let Some(member) =
                         module.metadata.get(&symbol_use.r#use.string)
                 {
-                    println!("hmmm.... {}", &symbol_use.r#use.string);
                     match &member {
                         ModuleMemberType::Event(_)
                         | ModuleMemberType::Command(_)
@@ -2324,8 +2322,6 @@ where
                 }
             }
         }
-
-        println!("SYMBOL_USES: {:?}", module.symbol_uses);
     }
 
     pub fn analyze_expressions(
@@ -2343,8 +2339,10 @@ where
                 if expr.context_vars.contains(&use_name) {
                     _use.r#type = SymbolUseType::TemplateContext;
                 } else {
-                    let use_type = self
-                        .classify_symbol_use(&canonical_use_name, _use.context);
+                    // let use_type = self
+                    //     .classify_symbol_use(&canonical_use_name, _use.context);
+                    let use_type =
+                        self.classify_symbol_use(&use_name, _use.context);
 
                     match use_type {
                         SymbolUseType::GlobalUnresolved => {

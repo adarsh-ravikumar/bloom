@@ -3,7 +3,7 @@
 </script>
 
 <column>
-  <button on:click={() => count ++}>
+  <button id={button} on:click={() => count ++} on:text_focus on:hover>
     Click Me!
   </button>
 

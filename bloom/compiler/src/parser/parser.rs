@@ -1,6 +1,7 @@
 use oxc_allocator::Allocator as OxcAllocator;
 
 use crate::{
+    analysis::PlatformNamespace,
     common::{ERRONEOUS_SPAN, Source, Span, SpannedString},
     diagnostic::Diagnostic,
     module::{
@@ -32,6 +33,10 @@ pub struct Parser<'a> {
     open_controls: Vec<Span>,
     last_closed_tag: Span,
     last_closed_control: Span,
+
+    // platform handling
+    platform_parent: String,
+    current_platform_namespace: Option<PlatformNamespace>,
 }
 
 const COMMAND: &'static str = "command";
@@ -56,6 +61,9 @@ impl<'a> Parser<'a> {
             open_controls: Vec::new(),
             last_closed_tag: ERRONEOUS_SPAN,
             last_closed_control: ERRONEOUS_SPAN,
+
+            platform_parent: String::default(),
+            current_platform_namespace: None,
         }
     }
 
@@ -455,6 +463,15 @@ impl<'a> Parser<'a> {
 
         let mut name = self.parse_ident(&[b'>']);
 
+        if self.current_platform_namespace.is_none() && is_platform {
+            self.platform_parent = name.string.clone();
+            self.current_platform_namespace = Some(match name.string.as_str() {
+                "svg" => PlatformNamespace::Svg,
+                "math" => PlatformNamespace::MathMl,
+                _ => PlatformNamespace::Html,
+            })
+        }
+
         if name.span == ERRONEOUS_SPAN {
             self.emit_invalid_tag_name(name_start, self.pos);
         }
@@ -496,6 +513,7 @@ impl<'a> Parser<'a> {
                 attributes,
                 fragment: None,
                 is_platform,
+                platform_namespace: self.current_platform_namespace.clone(),
             },
             self_closing,
         )
@@ -687,6 +705,10 @@ impl<'a> Parser<'a> {
 
         closing_name.span.start = closing_name_start;
         if is_platform {
+            if closing_name.string == self.platform_parent {
+                self.current_platform_namespace = None
+            }
+
             closing_name.string.insert(0, ':');
         }
 
@@ -778,6 +800,11 @@ impl<'a> Parser<'a> {
             && self.open_tags.last().unwrap() == &elem.name.span
         {
             self.parse_close_tag(elem.name.span);
+        }
+
+        if elem.is_platform {
+            // remove the ':' in the string representation.
+            elem.name.string.remove(0);
         }
 
         FragmentNode::Widget(elem)

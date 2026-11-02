@@ -1,14 +1,18 @@
 <script>
   let uhh;
 
-  function hover() {
+  #event
+  function hoverLol() {
      console.log("hover again?");
   }
 
+  function handleLong() {
+      conosle.log("uhhhhhhh")
+  }
 </script>
 
-<:button on:click={tap} on:hover={hover} testing={123} lol="123?{123}" {uhh}>
-  <text id={HTTPServer} on:hover on:click={testing} value:abc on:longEventName attrib_that_must_fold="123"> 
+<:button on:click={tap} on:hover={hoverLol} testing={123} lol="123?{123}" {uhh}>
+  <text id={text} on:focus on:hover={renamedHover} on:longEventName={handleLong}> 
     Hello!
   </text>
 

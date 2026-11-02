@@ -1,4 +1,5 @@
 use crate::{
+    analysis::PlatformNamespace,
     common::SpannedString,
     module::{Expression, ExpressionId},
 };
@@ -50,6 +51,7 @@ pub struct Widget {
     pub attributes: Vec<Attribute>,
     pub fragment: Option<Fragment>,
     pub is_platform: bool,
+    pub platform_namespace: Option<PlatformNamespace>,
 }
 
 // Control

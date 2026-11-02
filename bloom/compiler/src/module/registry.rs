@@ -69,7 +69,7 @@ impl<'a> ModuleRegistry {
             let module = &self.modules[module];
 
             if count == 0 && matches!(module.r#type, ModuleType::Widget) {
-                println!("Dead widget: {module:?}");
+                println!("Dead widget: {}", module.name);
             }
         }
 
