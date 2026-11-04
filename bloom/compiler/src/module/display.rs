@@ -1,7 +1,7 @@
 use crate::{
     module::Module,
     parser::{
-        Attribute, Widget,
+        Attribute, Tag,
         nodes::{AttributeValue, Control, Fragment, FragmentNode, Part},
     },
 };
@@ -31,7 +31,7 @@ impl Module {
         }
     }
 
-    fn display_attributes(&self, elem: &Widget, indent: &str) {
+    fn display_attributes(&self, elem: &Tag, indent: &str) {
         print!("{indent}attribs: [");
 
         if elem.attributes.is_empty() {
@@ -107,9 +107,9 @@ impl Module {
 
         for node in &frag.nodes {
             match node {
-                FragmentNode::Widget(elem) => {
+                FragmentNode::Tag(elem) => {
                     println!("{base_indent}tag");
-                    println!("{child_indent}name: {}", elem.name.string);
+                    println!("{child_indent}name: {}", elem.name);
 
                     self.display_attributes(elem, &child_indent);
 

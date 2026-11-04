@@ -1,6 +1,9 @@
+use core::fmt;
+use std::fmt::{Write, write};
+
 use crate::{
     analysis::PlatformNamespace,
-    common::SpannedString,
+    common::{Span, SpannedString},
     module::{Expression, ExpressionId},
 };
 
@@ -12,7 +15,7 @@ pub struct Fragment {
 
 #[derive(Debug)]
 pub enum FragmentNode {
-    Widget(Widget),
+    Tag(Tag),
     Parts(Parts),
     Text(String),
     Expression(ExpressionId),
@@ -22,7 +25,7 @@ pub enum FragmentNode {
 #[derive(Debug, PartialEq, Eq)]
 pub enum FragmentEnd {
     Root,
-    Widget,
+    Tag,
     ControlEnd,
     ControlCase,
 }
@@ -44,14 +47,80 @@ impl Part {
     }
 }
 
-// Widget
+// Tag
 #[derive(Debug)]
-pub struct Widget {
-    pub name: SpannedString,
+pub struct Tag {
+    pub name: TagName,
     pub attributes: Vec<Attribute>,
     pub fragment: Option<Fragment>,
-    pub is_platform: bool,
-    pub platform_namespace: Option<PlatformNamespace>,
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub enum TagNamespace {
+    Platform(PlatformNamespace),
+    Slot,
+    Custom(SpannedString),
+}
+
+impl TagNamespace {
+    pub fn is_name_match(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Platform(a), Self::Platform(b)) => a == b,
+            (Self::Slot, Self::Slot) => true,
+            (Self::Custom(a), Self::Custom(b)) => a.string == b.string,
+            _ => false,
+        }
+    }
+}
+
+impl fmt::Display for TagNamespace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Platform(a) => a.as_str(),
+                Self::Slot => "slot",
+                Self::Custom(a) => &a.string,
+            }
+        )
+    }
+}
+
+#[derive(Debug, Eq, PartialEq, Default, Clone)]
+pub struct TagName {
+    pub namespace: Option<TagNamespace>,
+    pub name: SpannedString,
+}
+
+impl TagName {
+    pub fn span(&self) -> Span {
+        self.name.span
+    }
+
+    pub fn string(&self) -> &String {
+        &self.name.string
+    }
+
+    pub fn is_name_match(&self, other: &Self) -> bool {
+        let namespace_match = match (&self.namespace, &other.namespace) {
+            (Some(a), Some(b)) => a.is_name_match(b),
+            (None, None) => true,
+            _ => false,
+        };
+
+        namespace_match && self.name.string == other.name.string
+    }
+}
+
+impl fmt::Display for TagName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(n) = &self.namespace {
+            write!(f, "{n}:{}", self.name)
+        } else {
+            write!(f, "{}", self.name)
+        }
+    }
 }
 
 // Control

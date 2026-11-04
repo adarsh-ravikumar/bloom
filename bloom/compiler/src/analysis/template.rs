@@ -1,12 +1,15 @@
 use std::collections::HashMap;
 
 use crate::{
-    analysis::Platform,
-    common::Span,
-    module::{Expression, ModuleMemberType, ModuleMetadata, ModuleRegistry},
+    analysis::{Platform, PlatformNamespace},
+    common::{EMPTY_SPAN, Span},
+    module::{
+        Expression, ModuleMemberType, ModuleMetadata, ModuleRegistry,
+        SlotMembers,
+    },
     parser::{
         Attribute, AttributeValue, BindingAttribute, Fragment, FragmentNode,
-        RegularAttribute,
+        RegularAttribute, Tag, TagNamespace,
     },
     utils,
 };
@@ -15,6 +18,7 @@ pub struct AttributeAnalyzer<'a> {
     registry: &'a ModuleRegistry,
     pub interface_delta: HashMap<String, ModuleMetadata>,
     pub exposed_event_map: HashMap<String, Option<String>>,
+    pub slots: HashMap<String, SlotMembers>,
     id_set: HashMap<String, Span>,
     platform_data: Platform,
 }
@@ -27,13 +31,12 @@ pub struct ModuleContext<'a> {
 
 impl<'a> AttributeAnalyzer<'a> {
     pub fn new(registry: &'a ModuleRegistry) -> Self {
-        // i don't really think this needs to be a struct that
-        // holds state? let it be for now, but i'll probably refactor
         Self {
             registry,
             interface_delta: HashMap::new(),
             exposed_event_map: HashMap::new(),
             id_set: HashMap::new(),
+            slots: HashMap::new(),
             platform_data: Platform::init(),
         }
     }
@@ -230,6 +233,7 @@ impl<'a> AttributeAnalyzer<'a> {
     fn resolve_binding_attribute(
         &mut self,
         id: Option<&str>,
+        tag: &Tag,
         current_module: &ModuleContext,
         canonical_name: &str,
         attrib: &BindingAttribute,
@@ -246,6 +250,49 @@ impl<'a> AttributeAnalyzer<'a> {
             );
 
             return;
+        }
+
+        if tag.name.namespace.is_none() {
+            let bind_target = if let Some(target) = self
+                .registry
+                .get_module(tag.name.string())
+                .unwrap()
+                .metadata
+                .get(&attrib.bind_from.string)
+            {
+                target
+            } else if let Some(target) = self
+                .interface_delta
+                .get(tag.name.string())
+                .unwrap()
+                .get(&attrib.bind_from.string)
+            {
+                target
+            } else {
+                // TODO: diagnostics
+                println!(
+                    "No attribute `{}` on tag`{}`",
+                    attrib.bind_from.string,
+                    tag.name.string()
+                );
+                return;
+            };
+
+            match bind_target {
+                ModuleMemberType::PrivateState(_)
+                | ModuleMemberType::PrivateVariable(_) => {
+                    // TODO: diagnostics
+                    println!(
+                        "Member `{}` on tag `{}` is private",
+                        attrib.bind_from.string,
+                        tag.name.string()
+                    );
+
+                    return;
+                }
+
+                _ => (),
+            }
         }
 
         // state
@@ -308,7 +355,7 @@ impl<'a> AttributeAnalyzer<'a> {
             .get_mut(current_module.name)
             .unwrap()
             .insert(
-                attrib.bind_to.string.clone(),
+                canonical_name.to_string(),
                 ModuleMemberType::StateProxy {
                     from: attrib.bind_from.string.clone(),
                     to: attrib.bind_to.string.clone(),
@@ -362,140 +409,396 @@ impl<'a> AttributeAnalyzer<'a> {
         None
     }
 
-    fn visit_fragment(
+    fn visit_platform_tag(
         &mut self,
         current_module: &ModuleContext,
-        fragment: &Fragment,
+        id: Option<&str>,
+        namespace: &PlatformNamespace,
+        tag: &Tag,
     ) {
-        for node in &fragment.nodes {
-            if let FragmentNode::Widget(w) = node {
-                // first, we must find the id.
-                let id =
-                    self.collect_id(&current_module.expressions, &w.attributes);
+        let element = tag.name.string();
 
-                if w.is_platform {
-                    let namespace = w.platform_namespace.as_ref().unwrap();
+        if !self.platform_data.is_valid_element(namespace, element) {
+            // TODO: diagnostics
+            println!("Invalid platform element {element}");
+            return;
+        }
 
-                    let element = &w.name.string;
-                    if !self.platform_data.is_valid_element(namespace, element)
-                    {
-                        // TODO: diagnostics
-                        println!("Invalid platform element {element}");
+        for attrib in &tag.attributes {
+            match attrib {
+                Attribute::Regular(attrib) => {
+                    if attrib.name.string == "id" {
                         continue;
                     }
 
-                    for attrib in &w.attributes {
-                        match attrib {
-                            Attribute::Regular(attrib) => {
-                                if attrib.name.string == "id" {
-                                    continue;
-                                }
-
-                                if !self.platform_data.is_valid_attribute(
-                                    namespace,
-                                    element,
-                                    &attrib.name.string,
-                                ) {
-                                    // TODO: diagnostics
-                                    println!(
-                                        "Invalid attribute {} on {element}",
-                                        attrib.name.string
-                                    );
-                                }
-                            }
-
-                            Attribute::Binding(attrib) => {
-                                let canonical_name = utils::normalize_case(
-                                    &attrib.bind_to.string,
-                                    utils::Case::SnakeCase,
-                                );
-
-                                // NOTE: exposed_event_suffix is None because platform events are
-                                // NOT exposed events. They are semantically source/terminal events
-                                self.resolve_binding_attribute(
-                                    id.as_deref(),
-                                    current_module,
-                                    &canonical_name,
-                                    attrib,
-                                    None,
-                                );
-                            }
-                        }
+                    if !self.platform_data.is_valid_attribute(
+                        namespace,
+                        element,
+                        &attrib.name.string,
+                    ) {
+                        // TODO: diagnostics
+                        println!(
+                            "Invalid attribute {} on {element}",
+                            attrib.name.string
+                        );
                     }
-
-                    if let Some(fragment) = &w.fragment {
-                        self.visit_fragment(current_module, fragment);
-                    }
-
-                    continue;
                 }
 
-                // module is guaranteed to exist at this point.
-                let widget_module_metadata =
-                    &self.registry.get_module(&w.name.string).unwrap().metadata;
+                Attribute::Binding(attrib) => {
+                    let canonical_name = utils::normalize_case(
+                        &attrib.bind_to.string,
+                        utils::Case::SnakeCase,
+                    );
 
-                for attrib in &w.attributes {
-                    match attrib {
-                        Attribute::Regular(attrib) => self
-                            .resolve_regular_attribute(
-                                &widget_module_metadata,
-                                attrib,
-                            ),
+                    /* NOTE: exposed_event_suffix is None because platform events are
+                     * NOT exposed events. They are semantically source/terminal events
+                     */
 
-                        Attribute::Binding(attrib) => {
-                            let canonical_name = utils::normalize_case(
-                                &attrib.bind_to.string,
-                                utils::Case::SnakeCase,
+                    self.resolve_binding_attribute(
+                        id.as_deref(),
+                        tag,
+                        current_module,
+                        &canonical_name,
+                        attrib,
+                        None,
+                    );
+                }
+            }
+        }
+    }
+
+    fn visit_regular_tag(
+        &mut self,
+        current_module: &ModuleContext,
+        id: Option<&str>,
+        tag: &Tag,
+    ) {
+        // module is guaranteed to exist at this point.
+        let widget_module_metadata = &self
+            .registry
+            .get_module(tag.name.string())
+            .unwrap()
+            .metadata;
+
+        for attrib in &tag.attributes {
+            match attrib {
+                Attribute::Regular(attrib) => self
+                    .resolve_regular_attribute(&widget_module_metadata, attrib),
+
+                Attribute::Binding(attrib) => {
+                    let canonical_name = utils::normalize_case(
+                        &attrib.bind_to.string,
+                        utils::Case::SnakeCase,
+                    );
+                    let exposed_event_suffix = if attrib.bind_from.string
+                        == "on"
+                    {
+                        // obtain the exposed event suffix, if any
+                        let event = if let Some(event) =
+                            widget_module_metadata.get(&canonical_name)
+                        {
+                            event
+                        } else if let Some(event) = self
+                            .interface_delta
+                            .get(tag.name.string())
+                            .unwrap()
+                            .get(&canonical_name)
+                        {
+                            event
+                        } else {
+                            // TODO: diagnostics
+                            println!(
+                                "No event `{}` on widget",
+                                attrib.bind_to.string
                             );
 
-                            let event = if let Some(event) =
-                                widget_module_metadata.get(&canonical_name)
-                            {
-                                Some(event)
-                            } else if let Some(event) = self
-                                .interface_delta
-                                .get(&w.name.string)
-                                .unwrap()
-                                .get(&canonical_name)
-                            {
-                                Some(event)
-                            } else {
-                                None
-                            };
+                            continue;
+                        };
 
-                            if event.is_none() {
-                                // TODO: diagnostics
-                                println!(
-                                    "No event `{}` on widget",
-                                    attrib.bind_to.string
-                                );
+                        match event {
+                            ModuleMemberType::ExposedEvent {
+                                event, ..
+                            } => Some(event.clone()),
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    };
 
-                                continue;
-                            }
+                    self.resolve_binding_attribute(
+                        id.as_deref(),
+                        tag,
+                        current_module,
+                        &canonical_name,
+                        attrib,
+                        exposed_event_suffix,
+                    )
+                }
+            }
+        }
+    }
 
-                            let event = event.unwrap();
+    fn visit_slot_tag(
+        &mut self,
+        current_module: &ModuleContext,
+        parent_tag: Option<&Tag>,
+        tag: &Tag,
+    ) {
+        let is_declaration = tag.fragment.is_none();
 
-                            let exposed_event_suffix = match event {
-                                ModuleMemberType::ExposedEvent {
-                                    event,
-                                    ..
-                                } => Some(event.clone()),
-                                _ => None,
-                            };
+        if parent_tag.is_none() && !is_declaration {
+            // TODO: diagnostics
+            println!("Slots can only be used inside tags");
+            return;
+        }
 
-                            self.resolve_binding_attribute(
-                                id.as_deref(),
-                                current_module,
-                                &canonical_name,
-                                attrib,
-                                exposed_event_suffix,
-                            )
+        // if it is a declaration, then we record it.
+        if is_declaration {
+            if tag.name.span() == EMPTY_SPAN {
+                // unnamed declaration.
+                if let Some(existing) = self.slots.get_mut(current_module.name)
+                {
+                    match existing {
+                        SlotMembers::Unnamed => {
+                            // TODO: diagnostics
+                            println!("Multiple unnamed slots");
+                        }
+
+                        SlotMembers::Named(_) => {
+                            // TODO: diagnostics
+                            println!("Cannot use both named and unnamed slots");
+                        }
+                    }
+                } else {
+                    self.slots.insert(
+                        current_module.name.to_string(),
+                        SlotMembers::Unnamed,
+                    );
+                };
+            } else {
+                // named declaration
+                let entry = if let Some(existing) =
+                    self.slots.get_mut(current_module.name)
+                {
+                    existing
+                } else {
+                    self.slots.insert(
+                        current_module.name.to_string(),
+                        SlotMembers::Named(HashMap::new()),
+                    );
+
+                    // get mutable reference.
+                    self.slots.get_mut(current_module.name).unwrap()
+                };
+
+                match entry {
+                    SlotMembers::Unnamed => {
+                        // TODO: diagnostics
+                        println!("Cannot use both named and unnamed slots");
+                    }
+
+                    SlotMembers::Named(slots) => {
+                        if slots.contains_key(tag.name.string()) {
+                            // TODO: diagnostics
+                            println!(
+                                "Named slot {} already exists",
+                                tag.name.string()
+                            );
+                        } else {
+                            slots.insert(
+                                tag.name.string().clone(),
+                                tag.name.span(),
+                            );
                         }
                     }
                 }
+            }
+        } else {
+            let Some(parent_tag) = parent_tag else {
+                // TODO: diagnostics
+                println!("Slot uses may only occur inside some parent tag");
+                return;
+            };
 
-                if let Some(fragment) = &w.fragment {
-                    self.visit_fragment(current_module, fragment);
+            if matches!(parent_tag.name.namespace, Some(TagNamespace::Slot)) {
+                // TODO: diagnostics
+                println!("Cannot nest slots");
+                return;
+            }
+
+            let slots = self.slots.get(parent_tag.name.string());
+
+            if slots.is_none() {
+                // TODO: diagnostics
+                println!("Tag {} does not allow slots", parent_tag.name.name);
+                return;
+            }
+
+            let slots = slots.unwrap();
+            match slots {
+                SlotMembers::Unnamed => {
+                    if tag.name.span() != EMPTY_SPAN {
+                        // TODO: diagnostics
+                        println!(
+                            "Tag {} has an unnamed slot. Cannot use named slot {} to populate it.",
+                            parent_tag.name.name, tag.name.name
+                        )
+                    } else {
+                        // TODO: diagnostics
+                        println!(
+                            "Tag {} has an unnamed slot. Cannot explicitly use <slot>...</slot>",
+                            parent_tag.name.name
+                        )
+                    }
+                }
+
+                SlotMembers::Named(slots) => {
+                    if !slots.contains_key(tag.name.string()) {
+                        // TODO: diagnostics
+                        println!(
+                            "Tag {} does not contain a slot with name {}",
+                            parent_tag.name.name, tag.name.name
+                        )
+                    }
+                }
+            }
+        }
+
+        if !tag.attributes.is_empty() {
+            // TODO: diagnostics
+            println!("Slot does not take attributes");
+        }
+    }
+
+    fn visit_fragment(
+        &mut self,
+        current_module: &ModuleContext,
+        parent_tag: Option<&Tag>,
+        fragment: &Fragment,
+    ) {
+        // we must check if the parent tag allows children
+        let allows_named_slots_only = if let Some(parent_tag) = parent_tag {
+            match &parent_tag.name.namespace {
+                Some(TagNamespace::Platform(namespace)) => {
+                    if !self
+                        .platform_data
+                        .allows_children(&namespace, parent_tag.name.string())
+                    {
+                        // TODO: diagnostics
+                        println!(
+                            "Tag {} does not allow children",
+                            parent_tag.name.name
+                        );
+                        return;
+                    }
+
+                    false
+                }
+
+                _ => {
+                    if matches!(
+                        parent_tag.name.namespace,
+                        Some(TagNamespace::Slot)
+                    ) {
+                        false
+                    } else if let Some(parent_slot) =
+                        self.slots.get(parent_tag.name.string())
+                    {
+                        match parent_slot {
+                            SlotMembers::Named(_) => true,
+                            _ => false,
+                        }
+                    } else {
+                        // TODO: diagnostics
+                        println!(
+                            "Tag {} does not allow children",
+                            parent_tag.name.name
+                        );
+                        return;
+                    }
+                }
+            }
+        } else {
+            false
+        };
+
+        for node in &fragment.nodes {
+            if let FragmentNode::Tag(tag) = node {
+                // first, we must find the id.
+                let id = self
+                    .collect_id(&current_module.expressions, &tag.attributes);
+
+                match &tag.name.namespace {
+                    Some(TagNamespace::Platform(namespace))
+                        if !allows_named_slots_only =>
+                    {
+                        self.visit_platform_tag(
+                            current_module,
+                            id.as_deref(),
+                            namespace,
+                            tag,
+                        );
+
+                        if let Some(fragment) = &tag.fragment {
+                            self.visit_fragment(
+                                current_module,
+                                Some(tag),
+                                fragment,
+                            );
+                        }
+                        continue;
+                    }
+
+                    Some(TagNamespace::Slot) => {
+                        self.visit_slot_tag(current_module, parent_tag, tag);
+
+                        if id.is_some() {
+                            // TODO: diagnostics
+                            println!("Slots do not take attributes");
+                        }
+
+                        if let Some(fragment) = &tag.fragment {
+                            self.visit_fragment(
+                                current_module,
+                                Some(tag),
+                                fragment,
+                            );
+                        }
+                    }
+
+                    Some(TagNamespace::Custom(_))
+                        if !allows_named_slots_only =>
+                    {
+                        // TODO: handle custom namespaces
+                        todo!("Custom namespaces are not supported yet");
+                    }
+
+                    None if !allows_named_slots_only => {
+                        self.visit_regular_tag(
+                            current_module,
+                            id.as_deref(),
+                            tag,
+                        );
+
+                        if let Some(fragment) = &tag.fragment {
+                            self.visit_fragment(
+                                current_module,
+                                Some(&tag),
+                                fragment,
+                            );
+                        }
+                    }
+
+                    _ => {
+                        // TODO: diagnostics
+                        println!(
+                            "Tag {} allows named slots only",
+                            // unwrap parent_tag, because if we hit this branch,
+                            // there's no way we are in the global scope, and hence
+                            // parent must exist
+                            parent_tag.unwrap().name.string()
+                        )
+                    }
                 }
             }
         }
@@ -517,7 +820,7 @@ impl<'a> AttributeAnalyzer<'a> {
                 .insert(module_context.name.to_string(), HashMap::new());
 
             // resolve attributes
-            self.visit_fragment(module_context, root);
+            self.visit_fragment(module_context, None, root);
         }
     }
 }

@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
 use crate::{
-    analysis::PlatformNamespace,
-    module::ExpressionId,
+    common::EMPTY_SPAN,
+    module::{ExpressionId, SlotMembers},
     parser::{
         Attribute, AttributeValue, Control, EachControl, Fragment,
-        FragmentNode, IfControl, Part, Parts, Widget,
+        FragmentNode, IfControl, Part, Parts, Tag, TagName, TagNamespace,
     },
     utils,
 };
@@ -16,6 +16,7 @@ pub struct TemplateIrGen<'a> {
     // exposed_event_map: &'a HashMap<String, Option<String>>,
     ast: &'a Fragment,
     next_node_id: usize,
+    slots: &'a HashMap<String, SlotMembers>,
 }
 
 type NodeId = usize;
@@ -28,13 +29,16 @@ pub enum IrNode {
     Expression { expr_id: ExpressionId },
     EndParts { id: NodeId, parent: NodeId },
 
-    StartWidget { name: String, id: NodeId, is_platform: bool },
-    EndWidget { id: NodeId, parent: NodeId },
+    StartTag { name: TagName, id: NodeId},
+    UseSlot { name: TagName, id: NodeId, parent: NodeId },
+    EndTag { id: NodeId, parent: NodeId },
+
+    DeclareSlot { name: Option<String>, parent: NodeId },
 
     StartAttributeList,
     AttributeName { name: String, id: NodeId },
     AttributeBindEvent { event: String, id: NodeId },
-    AttributeExposeEvent { source_event: String,  id: NodeId, widget_id: ExpressionId},
+    AttributeExposeEvent { source_event: String,  id: NodeId, tag_id: ExpressionId},
     AttributeBindState { from: String, to: String, id: NodeId, has_value: bool},
     AttributeTrue,
     EndAttributeList,
@@ -80,10 +84,14 @@ fn sanitize_text(text: String) -> String {
 }
 
 impl<'a> TemplateIrGen<'a> {
-    pub fn new(ast: &'a Fragment) -> Self {
+    pub fn new(
+        ast: &'a Fragment,
+        slots: &'a HashMap<String, SlotMembers>,
+    ) -> Self {
         Self {
             next_node_id: 1, // 0 represents global scope
             ir_nodes: Vec::new(),
+            slots,
             ast,
         }
     }
@@ -140,86 +148,146 @@ impl<'a> TemplateIrGen<'a> {
         }
     }
 
-    fn visit_widget(&mut self, widget: &Widget, parent: NodeId) {
+    fn visit_tag(&mut self, tag: &Tag, parent: NodeId) {
         let id = self.get_node_id();
 
-        self.emit_node(IrNode::StartWidget {
-            name: widget.name.string.clone(),
-            id,
-            is_platform: widget.is_platform,
-        });
-
-        self.emit_node(IrNode::StartAttributeList);
-
-        /* NOTE: Attribute analysis guarantees that if a widget has an id, then it is the
-         * first attribute, its value is an expression, and that expression is a lone identifier.
-         * If no `id` attribute exists, the widget cannot have exposed events. So widget_id will never
-         * be consumed. In that case `0` is a harmless default rather than an actual expression ID
-         */
-        let widget_id = if let Some(id_attrib_candidate) =
-            widget.attributes.first()
-            && let Attribute::Regular(attrib) = id_attrib_candidate
-            && attrib.name.string == "id"
-            && let AttributeValue::Expression(expr) = &attrib.value
-        {
-            *expr
-        } else {
-            0
-        };
-
-        for attrib in &widget.attributes {
-            match attrib {
-                Attribute::Regular(attrib) => {
-                    self.ir_nodes.push(IrNode::AttributeName {
-                        name: attrib.name.string.clone(),
-                        id,
+        match &tag.name.namespace {
+            // handle slot declaration
+            Some(TagNamespace::Slot) => {
+                if tag.fragment.is_none() {
+                    self.emit_node(IrNode::DeclareSlot {
+                        name: if tag.name.span() == EMPTY_SPAN {
+                            None
+                        } else {
+                            Some(tag.name.string().clone())
+                        },
+                        parent,
                     });
 
-                    self.visit_attribute_value(&attrib.value, id);
+                    return;
                 }
+            }
 
-                Attribute::Binding(attrib) => {
-                    if attrib.bind_from.string == "on" {
-                        if attrib.value.is_some() {
-                            self.ir_nodes.push(IrNode::AttributeBindEvent {
-                                event: attrib.bind_to.string.clone(),
-                                id,
-                            })
-                        } else {
-                            let source_event = utils::normalize_case(
-                                &attrib.bind_to.string,
-                                utils::Case::SnakeCase,
-                            );
+            _ => {
+                self.emit_node(IrNode::StartTag {
+                    name: tag.name.clone(),
+                    id,
+                });
 
-                            self.ir_nodes.push(IrNode::AttributeExposeEvent {
-                                source_event,
-                                widget_id,
+                self.emit_node(IrNode::StartAttributeList);
+
+                /* NOTE: Attribute analysis guarantees that if a tag has an id, then it is the
+                 * first attribute, its value is an expression, and that expression is a lone identifier.
+                 * If no `id` attribute exists, the tag cannot have exposed events. So tag_id will never
+                 * be consumed. In that case `0` is a harmless default rather than an actual expression ID
+                 */
+                let tag_id = if let Some(id_attrib_candidate) =
+                    tag.attributes.first()
+                    && let Attribute::Regular(attrib) = id_attrib_candidate
+                    && attrib.name.string == "id"
+                    && let AttributeValue::Expression(expr) = &attrib.value
+                {
+                    *expr
+                } else {
+                    0
+                };
+
+                for attrib in &tag.attributes {
+                    match attrib {
+                        Attribute::Regular(attrib) => {
+                            self.ir_nodes.push(IrNode::AttributeName {
+                                name: attrib.name.string.clone(),
                                 id,
-                            })
+                            });
+
+                            self.visit_attribute_value(&attrib.value, id);
                         }
-                    } else {
-                        self.ir_nodes.push(IrNode::AttributeBindState {
-                            from: attrib.bind_from.string.clone(),
-                            to: attrib.bind_to.string.clone(),
-                            has_value: attrib.value.is_some(),
-                            id,
-                        })
-                    }
 
-                    if let Some(value) = &attrib.value {
-                        self.visit_attribute_value(value, id);
+                        Attribute::Binding(attrib) => {
+                            if attrib.bind_from.string == "on" {
+                                if attrib.value.is_some() {
+                                    self.ir_nodes.push(
+                                        IrNode::AttributeBindEvent {
+                                            event: attrib
+                                                .bind_to
+                                                .string
+                                                .clone(),
+                                            id,
+                                        },
+                                    )
+                                } else {
+                                    let source_event = utils::normalize_case(
+                                        &attrib.bind_to.string,
+                                        utils::Case::SnakeCase,
+                                    );
+
+                                    self.ir_nodes.push(
+                                        IrNode::AttributeExposeEvent {
+                                            source_event,
+                                            tag_id,
+                                            id,
+                                        },
+                                    )
+                                }
+                            } else {
+                                self.ir_nodes.push(IrNode::AttributeBindState {
+                                    from: attrib.bind_from.string.clone(),
+                                    to: attrib.bind_to.string.clone(),
+                                    has_value: attrib.value.is_some(),
+                                    id,
+                                })
+                            }
+
+                            if let Some(value) = &attrib.value {
+                                self.visit_attribute_value(value, id);
+                            }
+                        }
                     }
                 }
+
+                self.emit_node(IrNode::EndAttributeList);
             }
         }
 
-        self.emit_node(IrNode::EndAttributeList);
+        if let Some(frag) = &tag.fragment {
+            match &tag.name.namespace {
+                Some(TagNamespace::Platform(_)) => {
+                    self.visit_fragment(frag, id);
+                    self.emit_node(IrNode::EndTag { id, parent });
+                }
 
-        if let Some(frag) = &widget.fragment {
-            self.visit_fragment(frag, id);
+                Some(TagNamespace::Slot) => {
+                    self.emit_node(IrNode::UseSlot {
+                        name: tag.name.clone(),
+                        parent,
+                        id: id,
+                    });
+
+                    self.visit_fragment(frag, id);
+                }
+
+                _ => {
+                    let slot = self.slots.get(tag.name.string());
+                    match slot {
+                        Some(SlotMembers::Unnamed) => {
+                            let slot_id = self.get_node_id();
+                            self.emit_node(IrNode::UseSlot {
+                                name: TagName::default(),
+                                parent: id,
+                                id: slot_id,
+                            });
+                            self.visit_fragment(frag, slot_id);
+                        }
+
+                        _ => {
+                            self.visit_fragment(frag, id);
+                        }
+                    }
+
+                    self.emit_node(IrNode::EndTag { id, parent });
+                }
+            }
         }
-
-        self.emit_node(IrNode::EndWidget { id, parent });
     }
 
     fn visit_control(&mut self, control: &Control, parent: NodeId) {
@@ -298,9 +366,7 @@ impl<'a> TemplateIrGen<'a> {
                 FragmentNode::Expression(expr) => {
                     self.visit_expression(*expr);
                 }
-                FragmentNode::Widget(widget) => {
-                    self.visit_widget(widget, parent)
-                }
+                FragmentNode::Tag(tag) => self.visit_tag(tag, parent),
                 FragmentNode::Control(control) => {
                     self.visit_control(control, parent)
                 }

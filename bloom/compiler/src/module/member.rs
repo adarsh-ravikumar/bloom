@@ -17,6 +17,12 @@ pub enum SymbolUseType {
 }
 
 #[derive(Debug, Clone)]
+pub enum SlotMembers {
+    Named(HashMap<String, Span>),
+    Unnamed,
+}
+
+#[derive(Debug, Clone)]
 pub struct SymbolUse {
     pub r#use: SpannedString,
     pub canonical_name: String,

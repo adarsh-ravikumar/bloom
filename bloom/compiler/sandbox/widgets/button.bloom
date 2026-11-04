@@ -1,21 +1,23 @@
 <script>
-  let uhh;
-
-  #event
-  function hoverLol() {
-     console.log("hover again?");
-  }
-
-  function handleLong() {
-      conosle.log("uhhhhhhh")
-  }
+  let count: number = 1;
 </script>
 
-<:button on:click={tap} on:hover={hoverLol} testing={123} lol="123?{123}" {uhh}>
-  <text id={text} on:focus on:hover={renamedHover} on:longEventName={handleLong}> 
-    Hello!
-  </text>
+<:button on:click={() => {
+  count ++;
+  if (count % 2 == 0) {
+      textBackground = "black";
+  } else {
+      textBackground = "blue";
+  }
+}}>
+  <text color:textBackground>
+    <slot:counter>
+      Counter: {count}
+    </slot:counter>
 
-  {uhm}
+    <slot:header>
+      magical!
+    </slot:header>
+  </text>
 </:button>
 

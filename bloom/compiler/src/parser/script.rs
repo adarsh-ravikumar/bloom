@@ -1,7 +1,7 @@
 use std::{collections::HashMap, hash::Hash};
 
 use crate::{
-    common::{ERRONEOUS_SPAN, Span, SpannedString},
+    common::{EMPTY_SPAN, Span, SpannedString},
     module::{
         Expression, Function, Module, ModuleMemberType, SymbolUse,
         SymbolUseType, Variable,
@@ -75,7 +75,7 @@ pub enum TypeAnnotation {
 
 impl Default for TypeAnnotation {
     fn default() -> Self {
-        Self::Disallowed((ERRONEOUS_SPAN, ""))
+        Self::Disallowed((EMPTY_SPAN, ""))
     }
 }
 
@@ -2407,6 +2407,8 @@ where
         for ctxt in uses.values_mut() {
             flat_uses.extend(std::mem::take(ctxt));
         }
+
+        flat_uses.sort_by_key(|a| a.r#use.span.start);
 
         expr.symbol_uses = flat_uses;
     }

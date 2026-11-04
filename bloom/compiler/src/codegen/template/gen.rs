@@ -4,11 +4,12 @@ use std::fmt::Write;
 use std::collections::HashMap;
 
 use crate::{
-    common::{Span, SpannedString},
+    common::{EMPTY_SPAN, Span, SpannedString},
     ir::IrNode,
     module::{
         Expression, ModuleMemberType, ModuleMetadata, SymbolUse, SymbolUseType,
     },
+    parser::TagNamespace,
     utils,
 };
 
@@ -157,7 +158,7 @@ impl<'a> GenerateTemplateJs<'a> {
 
                 IrNode::EndParts { .. } => {
                     in_parts = false;
-                    write_buffer!(self, "`);\n");
+                    write_buffer!(self, "`)");
                 }
 
                 IrNode::Text { value } => {
@@ -170,7 +171,7 @@ impl<'a> GenerateTemplateJs<'a> {
                     if in_parts {
                         write_buffer!(self, "${{{expr}}}");
                     } else {
-                        write_buffer!(self, "new Derived(() => {expr});\n");
+                        write_buffer!(self, "new Derived(() => {expr})");
                     }
                 }
 
@@ -196,10 +197,7 @@ impl<'a> GenerateTemplateJs<'a> {
 
                 IrNode::EndParts { id, parent } => {
                     if *parent == 0 {
-                        write_buffer!(
-                            self,
-                            "]);\nthis.root.appendChild(w{id});\n"
-                        );
+                        write_buffer!(self, "]);\nthis.appendChild(w{id});\n");
                     } else {
                         write_buffer!(
                             self,
@@ -218,30 +216,50 @@ impl<'a> GenerateTemplateJs<'a> {
                     write_buffer!(self, "new Derived(() => `${{{expr}}}`),",);
                 }
 
-                IrNode::StartWidget {
-                    name,
-                    id,
-                    is_platform,
-                } => {
-                    write_buffer!(self, "const w{id} = new ",);
+                IrNode::StartTag { name, id } => {
+                    write_buffer!(self, "const w{id} = ",);
 
-                    if *is_platform {
-                        write_buffer!(self, "Platform(\"{name}\");\n");
+                    match &name.namespace {
+                        Some(TagNamespace::Platform(_)) => {
+                            write_buffer!(
+                                self,
+                                "new Platform(\"{}\");\n",
+                                name.string()
+                            );
+                        }
+
+                        _ => {
+                            write_buffer!(
+                                self,
+                                "new {}();\n",
+                                utils::normalize_case(
+                                    name.string(),
+                                    utils::Case::PascalCase
+                                )
+                            );
+
+                            write_buffer!(self, "w{id}.build();\n");
+                        }
+                    }
+                }
+
+                IrNode::UseSlot { name, id, parent } => {
+                    write_buffer!(self, "const w{id} = ",);
+
+                    if name.span() == EMPTY_SPAN {
+                        write_buffer!(self, "w{parent}.slot;\n",);
                     } else {
                         write_buffer!(
                             self,
-                            "{}();\n",
-                            utils::normalize_case(
-                                name,
-                                utils::Case::PascalCase
-                            )
+                            "w{parent}.slot[\"{}\"];\n",
+                            name.string()
                         );
                     }
                 }
 
-                IrNode::EndWidget { id, parent } => {
+                IrNode::EndTag { id, parent } => {
                     if *parent == 0 {
-                        write_buffer!(self, "this.root.appendChild(w{id});\n");
+                        write_buffer!(self, "this.appendChild(w{id});\n");
                     } else {
                         write_buffer!(self, "w{parent}.appendChild(w{id});\n");
                     }
@@ -277,9 +295,9 @@ impl<'a> GenerateTemplateJs<'a> {
                         continue;
                     }
 
-                    write_buffer!(self, "w{id}.{name} = ");
-
+                    write_buffer!(self, "w{id}.setAttribute(\"{name}\", ");
                     self.generate_attribute_value(&mut ir);
+                    write_buffer!(self, ");\n");
                 }
 
                 IrNode::AttributeBindEvent { event, id } => {
@@ -302,12 +320,12 @@ impl<'a> GenerateTemplateJs<'a> {
 
                 IrNode::AttributeExposeEvent {
                     source_event,
-                    widget_id,
+                    tag_id,
                     id,
                 } => {
                     let canonical_event_name = format!(
                         "{}_{source_event}",
-                        &self.expressions[*widget_id].source.string,
+                        &self.expressions[*tag_id].source.string,
                     );
 
                     let event_name = if let Some(name) =
@@ -353,6 +371,27 @@ impl<'a> GenerateTemplateJs<'a> {
                     }
                 }
 
+                IrNode::DeclareSlot { name, parent } => {
+                    let accessor = if let Some(name) = name {
+                        format!("this.slot[\"{name}\"]")
+                    } else {
+                        String::from("this.slot")
+                    };
+
+                    write_buffer!(self, "{accessor} = new Slot();\n");
+
+                    if *parent == 0usize {
+                        write_buffer!(
+                            self,
+                            "this.root.appendChild({accessor}.build());\n"
+                        )
+                    } else {
+                        write_buffer!(
+                            self,
+                            "w{parent}.appendChild({accessor}.build());\n"
+                        )
+                    }
+                }
                 _ => continue,
             }
         }
@@ -403,7 +442,7 @@ impl<'a> GenerateTemplateJs<'a> {
                     );
                 }
 
-                ModuleMemberType::RenamedEvent { from, to } => {
+                ModuleMemberType::RenamedEvent { to, .. } => {
                     let to_fn_name =
                         utils::normalize_case(to, utils::Case::CamelCase);
 
@@ -443,7 +482,13 @@ impl<'a> GenerateTemplateJs<'a> {
     fn generate_module_variables(&mut self) {
         let mut event_list = Vec::new();
 
-        for (name, member) in self.metadata {
+        write_buffer!(
+            self,
+            "this.root.classList.add(\"b-{}\");\n",
+            self.module_name
+        );
+
+        for (_, member) in self.metadata {
             match member {
                 ModuleMemberType::PrivateVariable(v) => {
                     write_buffer!(
@@ -537,25 +582,31 @@ impl<'a> GenerateTemplateJs<'a> {
         let module_name =
             utils::normalize_case(self.module_name, utils::Case::PascalCase);
 
-        write!(&mut res, "class {module_name} {{\nconstructor() {{\n");
+        write!(
+            &mut res,
+            "class {module_name} extends Widget {{\nconstructor() {{\nsuper();\n"
+        ).expect("Write to result buffer failed");
 
         self.generate_module_variables();
 
-        write!(&mut res, "{}\n}}\n", self.buffer);
+        write!(&mut res, "{}\n}}\n", self.buffer)
+            .expect("Write to result buffer failed");
 
         self.buffer.clear();
 
         self.generate_module_functions();
 
-        write!(&mut res, "{}\n", self.buffer);
+        write!(&mut res, "{}\n", self.buffer)
+            .expect("Write to result buffer failed");
 
         self.buffer.clear();
 
         self.generate_build();
 
-        write!(&mut res, "build () {{\n{}\n}}\n", self.buffer);
+        write!(&mut res, "build () {{\n{}\nreturn this;}}\n", self.buffer)
+            .expect("Write to result buffer failed");
 
-        write!(&mut res, "}}\n");
+        write!(&mut res, "}}\n").expect("Write to result buffer failed");
 
         res
     }

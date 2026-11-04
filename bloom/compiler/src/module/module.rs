@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
-    common::{ERRONEOUS_SPAN, Source, Span},
+    common::{EMPTY_SPAN, Source, Span},
     diagnostic::DiagnosticRenderer,
     module::{
         Expression, ExpressionId, ModuleMetadata, ModuleRegistry, SymbolUse,
@@ -25,6 +25,8 @@ pub struct Module {
     pub dependencies: HashMap<String, Span>, // store the span of the first occurance
     pub symbol_uses: HashMap<usize, Vec<SymbolUse>>,
     pub expressions: Vec<Expression>,
+    pub has_slots: bool,
+    pub named_slots: HashMap<String, Span>,
 }
 
 impl Default for Module {
@@ -32,12 +34,14 @@ impl Default for Module {
         Self {
             root: None,
             r#type: ModuleType::Widget,
-            script: (ERRONEOUS_SPAN, String::new()),
+            script: (EMPTY_SPAN, String::new()),
             metadata: ModuleMetadata::new(),
             name: String::new(),
             dependencies: HashMap::new(),
             symbol_uses: HashMap::new(),
             expressions: Vec::new(),
+            has_slots: false,
+            named_slots: HashMap::new(),
         }
     }
 }

@@ -5,24 +5,64 @@
  * And of course, this is the ONLY FILE in the entire repository that is AI generated.
  */
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub struct Platform {
     html_map: HashMap<&'static str, &'static [&'static str]>,
     svg_map: HashMap<&'static str, &'static [&'static str]>,
     mathml_map: HashMap<&'static str, &'static [&'static str]>,
+
+    html_allows_children: HashSet<&'static str>,
+    svg_allows_children: HashSet<&'static str>,
+    mathml_allows_children: HashSet<&'static str>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlatformNamespace {
     Html,
     Svg,
     MathMl,
 }
 
+impl PlatformNamespace {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Html => "html",
+            Self::Svg => "svg",
+            Self::MathMl => "math",
+        }
+    }
+
+    pub fn from_string(string: &str) -> Self {
+        match string {
+            "svg" => PlatformNamespace::Svg,
+            "math" => PlatformNamespace::MathMl,
+            _ => PlatformNamespace::Html,
+        }
+    }
+}
+
 impl Platform {
     pub fn is_valid_event(&self, event_name: &str) -> bool {
         HTML_EVENTS.contains(&event_name)
+    }
+
+    pub fn allows_children(
+        &self,
+        namespace: &PlatformNamespace,
+        element: &str,
+    ) -> bool {
+        match namespace {
+            PlatformNamespace::Html => {
+                self.html_allows_children.contains(&element)
+            }
+            PlatformNamespace::Svg => {
+                self.svg_allows_children.contains(&element)
+            }
+            PlatformNamespace::MathMl => {
+                self.mathml_allows_children.contains(&element)
+            }
+        }
     }
 
     pub fn is_valid_element(
@@ -836,10 +876,182 @@ impl Platform {
             ("annotation-xml", &["encoding"][..]),
         ]);
 
+        let html_allows_children = HashSet::from([
+            // Document structure
+            "html",
+            "head",
+            "body",
+            // Sectioning
+            "article",
+            "aside",
+            "footer",
+            "header",
+            "main",
+            "nav",
+            "section",
+            "search",
+            // Text and grouping
+            "address",
+            "blockquote",
+            "div",
+            "dl",
+            "dt",
+            "dd",
+            "figure",
+            "figcaption",
+            "hr",
+            "li",
+            "menu",
+            "ol",
+            "p",
+            "pre",
+            "ul",
+            // Inline text
+            "a",
+            "abbr",
+            "b",
+            "bdi",
+            "bdo",
+            "cite",
+            "code",
+            "data",
+            "del",
+            "dfn",
+            "em",
+            "i",
+            "ins",
+            "kbd",
+            "mark",
+            "q",
+            "rp",
+            "rt",
+            "ruby",
+            "s",
+            "samp",
+            "small",
+            "span",
+            "strong",
+            "sub",
+            "sup",
+            "time",
+            "u",
+            "var",
+            // Media and embedded content
+            "audio",
+            "canvas",
+            "iframe",
+            "map",
+            "object",
+            "picture",
+            "video",
+            // Tables
+            "table",
+            "caption",
+            "colgroup",
+            "thead",
+            "tbody",
+            "tfoot",
+            "tr",
+            "td",
+            "th",
+            // Forms and interactive elements
+            "button",
+            "datalist",
+            "fieldset",
+            "form",
+            "label",
+            "legend",
+            "meter",
+            "optgroup",
+            "option",
+            "output",
+            "progress",
+            "select",
+            "textarea",
+            "details",
+            "dialog",
+            "summary",
+            // Scripting and templates
+            "noscript",
+            "script",
+            "style",
+            "template",
+            "slot",
+            // Other
+            "h1",
+            "h2",
+            "h3",
+            "h4",
+            "h5",
+            "h6",
+            "hgroup",
+        ]);
+
+        let svg_allows_children = HashSet::from([
+            // Core containers
+            "svg",
+            "g",
+            "a",
+            "defs",
+            "symbol",
+            "switch",
+            "foreignObject",
+            // Clipping and masking
+            "clipPath",
+            "mask",
+            "marker",
+            // Patterns and gradients
+            "pattern",
+            "linearGradient",
+            "radialGradient",
+            // Filters
+            "filter",
+            "feMerge",
+            "feComponentTransfer",
+            // Text
+            "text",
+            "tspan",
+            "textPath",
+        ]);
+
+        let mathml_allows_children = HashSet::from([
+            // Root and grouping
+            "math",
+            "mrow",
+            "mstyle",
+            "merror",
+            "mpadded",
+            "mphantom",
+            "menclose",
+            // Fractions, roots and scripts
+            "mfrac",
+            "msqrt",
+            "mroot",
+            "msub",
+            "msup",
+            "msubsup",
+            "munder",
+            "mover",
+            "munderover",
+            "mmultiscripts",
+            // Tables
+            "mtable",
+            "mtr",
+            "mlabeledtr",
+            "mtd",
+            // Other
+            "maction",
+            "semantics",
+            "annotation-xml",
+        ]);
+
         Self {
             html_map,
             svg_map,
             mathml_map,
+            html_allows_children,
+            svg_allows_children,
+            mathml_allows_children,
         }
     }
 }

@@ -6,6 +6,8 @@ use crate::{
     module::{Module, ModuleRegistry, ModuleType},
 };
 
+use std::{fmt::Write, fs};
+
 mod analysis;
 mod codegen;
 mod common;
@@ -19,14 +21,19 @@ mod utils;
 fn main() {
     let sources = [
         (
+            "text",
+            ModuleType::Widget,
+            Source::from_path("sandbox/widgets/text.bloom").unwrap(),
+        ),
+        (
             "button",
             ModuleType::Widget,
             Source::from_path("sandbox/widgets/button.bloom").unwrap(),
         ),
         (
-            "text",
+            "container",
             ModuleType::Widget,
-            Source::from_path("sandbox/widgets/text.bloom").unwrap(),
+            Source::from_path("sandbox/widgets/container.bloom").unwrap(),
         ),
         // (
         //     "counter",
@@ -79,7 +86,7 @@ fn main() {
 
     // println!("\nPerforming template analysis:");
 
-    let (interface_delta, exposed_events_map) = {
+    let (interface_delta, exposed_events_map, slots) = {
         let mut attribute_analyzer = AttributeAnalyzer::new(&registry);
 
         for module in &order {
@@ -110,6 +117,7 @@ fn main() {
         (
             attribute_analyzer.interface_delta,
             attribute_analyzer.exposed_event_map,
+            attribute_analyzer.slots,
         )
     };
 
@@ -127,6 +135,8 @@ fn main() {
 
     // println!("\nPerforming Intermediate Representation Generation");
 
+    let mut compiled_result = String::new();
+
     for module in &order {
         let module = &mut registry.modules[*module];
 
@@ -140,14 +150,14 @@ fn main() {
         // println!("\nGenerating module {}", module.name);
 
         if let Some(root) = &module.root {
-            let mut ir_gen = TemplateIrGen::new(root);
+            let mut ir_gen = TemplateIrGen::new(root, &slots);
             ir_gen.generate_ir();
 
-            // for node in &ir_gen.ir_nodes {
-            //     println!("{node:?}");
-            // }
-            //
-            // println!("\nCodegen Result:\n");
+            for node in &ir_gen.ir_nodes {
+                println!("{node:?}");
+            }
+
+            println!("\nCodegen Result:\n");
             let mut codegen = GenerateTemplateJs::new(
                 &ir_gen.ir_nodes,
                 &module.name,
@@ -160,6 +170,14 @@ fn main() {
             let res = codegen.generate();
 
             println!("{res}");
+            write!(&mut compiled_result, "{res}");
         }
     }
+
+    let mut prelude =
+        String::from_utf8(fs::read("sandbox/out/prelude.js").unwrap()).unwrap();
+
+    prelude += &compiled_result;
+
+    fs::write("sandbox/out/result.js", prelude);
 }

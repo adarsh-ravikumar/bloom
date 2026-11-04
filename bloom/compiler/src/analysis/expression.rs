@@ -46,8 +46,12 @@ impl<'a> ExpressionAnalyzer<'a> {
                         }
 
                         ModuleMemberType::PrivateState(_)
-                        | ModuleMemberType::PublicState(_)
-                        | ModuleMemberType::StateProxy { .. } => {
+                        | ModuleMemberType::PublicState(_) => {
+                            symbol_use.r#type = SymbolUseType::GlobalState
+                        }
+
+                        ModuleMemberType::StateProxy { from, to } => {
+                            println!("binding state proxy {from}, {to}");
                             symbol_use.r#type = SymbolUseType::GlobalState
                         }
 

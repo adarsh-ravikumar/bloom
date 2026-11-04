@@ -1,49 +1,21 @@
 <script>
-  export let attribThatMustFold: string;
-  let value: number;
-
-  function test () {
-    console.log("haha normie");
-  }
-
-  #event
-  function hover () {
-    console.log("text hover");
-  }
-
-  #event
-  function focus () {
-    console.log("text focus");
-    return value;
-  }
-
-  #event
-  function longEventName (param1, param2, param3: number, param4: boolean, ...rest) {
-    console.log("looooonggg");
-  }
+  const test = "";
+  export let color: string = "blue";
 </script>
 
-<:div>
-  <:button
-    on:click={
-      (e) => {
-        value ++;
-        click();
-      }
-    }
 
-    on:hover={
-      (e) => {
-        attrib += "a"; 
-        hover();
-      }
-    }
-  >
-    Click me?
-  </:button>
+<container>
+  <slot:header>
+    <slot:header />
+  </slot:header>
+</container>
 
-  <:p>
-    Hello, world! {attrib}
-    {value}
-  </:p>
+<:div {test} style="background-color: {color}; color: white;">
+  <slot:counter />
+</:div>
+
+Some text in the middle cuz why not!
+
+<:div style="background-color: red; color: white;">
+  Hallo!
 </:div>

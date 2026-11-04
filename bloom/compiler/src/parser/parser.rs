@@ -2,7 +2,7 @@ use oxc_allocator::Allocator as OxcAllocator;
 
 use crate::{
     analysis::PlatformNamespace,
-    common::{ERRONEOUS_SPAN, Source, Span, SpannedString},
+    common::{EMPTY_SPAN, Source, Span, SpannedString},
     diagnostic::Diagnostic,
     module::{
         Expression, ExpressionId, Module, ModuleMemberType, ModuleMetadata,
@@ -29,14 +29,14 @@ pub struct Parser<'a> {
     module: &'a mut Module,
 
     // stacks for handling block-related diagnostics
-    open_tags: Vec<Span>,
+    open_tags: Vec<TagName>,
     open_controls: Vec<Span>,
-    last_closed_tag: Span,
+    last_closed_tag: TagName,
     last_closed_control: Span,
 
     // platform handling
     platform_parent: String,
-    current_platform_namespace: Option<PlatformNamespace>,
+    current_platform_tag_type: Option<PlatformNamespace>,
 }
 
 const COMMAND: &'static str = "command";
@@ -59,11 +59,11 @@ impl<'a> Parser<'a> {
 
             open_tags: Vec::new(),
             open_controls: Vec::new(),
-            last_closed_tag: ERRONEOUS_SPAN,
-            last_closed_control: ERRONEOUS_SPAN,
+            last_closed_tag: TagName::default(),
+            last_closed_control: EMPTY_SPAN,
 
             platform_parent: String::default(),
-            current_platform_namespace: None,
+            current_platform_tag_type: None,
         }
     }
 
@@ -160,7 +160,7 @@ impl<'a> Parser<'a> {
                     }
 
                     if self.peek(1) == b'/' {
-                        if expected_end.contains(&FragmentEnd::Widget) {
+                        if expected_end.contains(&FragmentEnd::Tag) {
                             // we have spotted an end tag.
                             // we must return whatever we have parsed as the fragment.
                             // the caller is expected to handle the end tag
@@ -171,14 +171,16 @@ impl<'a> Parser<'a> {
                             return Fragment { nodes };
                         }
                     }
-                    // parse widget
-                    let (elem, is_self_closing) = self.parse_open_tag();
 
-                    match self.src.view_span(elem.name.span) {
-                        "script" => self.parse_script_tag(elem.name.span),
-                        _ => {
-                            nodes.push(self.parse_widget(elem, is_self_closing))
-                        }
+                    // parse tag
+                    let (tag, is_self_closing) = self.parse_open_tag();
+
+                    if tag.name.namespace.is_none()
+                        && tag.name.name.string == "script"
+                    {
+                        self.parse_script_tag(&tag.name)
+                    } else {
+                        nodes.push(self.parse_tag(tag, is_self_closing))
                     }
                 }
 
@@ -489,32 +491,75 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_open_tag(&mut self) -> (Widget, bool) {
+    fn parse_tag_name(&mut self) -> TagName {
+        let name_start = self.pos; // record for diagnostics
+        let mut tag_name = TagName::default();
+
+        let mut namespace_prefix = self.parse_ident(&[b':', b'>', b'/']);
+        let is_namespaced = self.eat(":");
+
+        if self.current_platform_tag_type.is_none()
+            && namespace_prefix.span == EMPTY_SPAN
+        {
+            self.platform_parent = tag_name.name.string.clone();
+
+            self.current_platform_tag_type = Some(
+                PlatformNamespace::from_string(tag_name.name.string.as_str()),
+            )
+        }
+
+        // slots can be used with implicit namspace suffix (i.e without a suiffix) as well.
+        // hence, we initialize it to default. if it is used with a suffix, is_namespaced is
+        // already true, and the case is handled in the latter block.
+        if namespace_prefix.string == "slot" {
+            tag_name.namespace = Some(TagNamespace::Slot);
+            tag_name.name = SpannedString::default();
+        }
+
+        if is_namespaced {
+            if tag_name.namespace.is_none() {
+                tag_name.namespace =
+                    Some(if namespace_prefix.span == EMPTY_SPAN {
+                        TagNamespace::Platform(
+                            // current_platform_tag_type is guaranteed to be set by this point.
+                            self.current_platform_tag_type
+                                .as_ref()
+                                .unwrap()
+                                .clone(),
+                        )
+                    } else {
+                        TagNamespace::Custom(namespace_prefix)
+                    });
+            }
+
+            let name = self.parse_ident(&[b'>', b'/']);
+
+            if name.span == EMPTY_SPAN {
+                // TODO: diagnostics
+                println!("expected tag name.");
+            }
+
+            tag_name.name = name
+        }
+        // we only absorb the name if the tag is NOT a slot. slots allow for empty names.
+        else if !matches!(tag_name.namespace, Some(TagNamespace::Slot)) {
+            if namespace_prefix.span == EMPTY_SPAN {
+                self.emit_invalid_tag_name(name_start, self.pos);
+            }
+
+            // we aren't parsing a namespaced tag. hence, whatever we parsed to be the
+            // namespace prefix IS the actual tag name.
+            tag_name.name = std::mem::take(&mut namespace_prefix);
+        }
+
+        tag_name
+    }
+
+    fn parse_open_tag(&mut self) -> (Tag, bool) {
         let tag_open_pos = self.pos;
         self.eat("<");
 
-        let name_start = self.pos; // record for diagnostics
-        let is_platform = self.eat(":");
-
-        let mut name = self.parse_ident(&[b'>']);
-
-        if self.current_platform_namespace.is_none() && is_platform {
-            self.platform_parent = name.string.clone();
-            self.current_platform_namespace = Some(match name.string.as_str() {
-                "svg" => PlatformNamespace::Svg,
-                "math" => PlatformNamespace::MathMl,
-                _ => PlatformNamespace::Html,
-            })
-        }
-
-        if name.span == ERRONEOUS_SPAN {
-            self.emit_invalid_tag_name(name_start, self.pos);
-        }
-
-        name.span.start = name_start; // we keep the ":" in the name
-        if is_platform {
-            name.string.insert(0, ':');
-        }
+        let tag_name = self.parse_tag_name();
 
         self.consume_whitespace();
 
@@ -525,8 +570,9 @@ impl<'a> Parser<'a> {
         // self closing
         let self_closing = self.eat("/>");
 
+        // we have an open tag.
         if !self_closing {
-            self.open_tags.push(name.span);
+            self.open_tags.push(tag_name.clone());
         }
 
         if !self_closing && !self.eat(">") {
@@ -543,12 +589,10 @@ impl<'a> Parser<'a> {
         }
 
         (
-            Widget {
-                name,
+            Tag {
+                name: tag_name,
                 attributes,
                 fragment: None,
-                is_platform,
-                platform_namespace: self.current_platform_namespace.clone(),
             },
             self_closing,
         )
@@ -643,7 +687,7 @@ impl<'a> Parser<'a> {
             let start = self.pos; // record for diagnostics
             let name = self.parse_ident(&[b'=', b'{', b'>', b'"', b'\'', b':']);
 
-            if name.span == ERRONEOUS_SPAN {
+            if name.span == EMPTY_SPAN {
                 self.emit_invalid_attribute_name(start, self.pos);
             }
 
@@ -658,7 +702,7 @@ impl<'a> Parser<'a> {
                 let bind_to = self
                     .parse_ident(&[b'=', b'{', b'>', b'"', b'\'', b':', b'/']);
 
-                let bind_to = if bind_to.span == ERRONEOUS_SPAN {
+                let bind_to = if bind_to.span == EMPTY_SPAN {
                     bind_from.clone()
                 } else {
                     bind_to
@@ -717,7 +761,7 @@ impl<'a> Parser<'a> {
         attributes
     }
 
-    fn parse_close_tag(&mut self, name: Span) {
+    fn parse_close_tag(&mut self, matching_name: &TagName) {
         let tag_start = self.pos;
 
         // this is a defensive grammar assertion.
@@ -729,35 +773,16 @@ impl<'a> Parser<'a> {
             return;
         }
 
-        let closing_name_start = self.pos; // record for diagnostics
-        let is_platform = self.eat(":"); // if this is a closing tag for a platform, the ":" must be consumed
-        // before parsing the identifier. but the name string should still
-        // include the ":", as that's what's expected.
-        let mut closing_name = self.parse_ident(&[b'>']);
-        if closing_name.span == ERRONEOUS_SPAN {
-            self.emit_invalid_closing_tag_name(closing_name_start, self.pos);
-        }
+        let tag_name = self.parse_tag_name();
 
-        closing_name.span.start = closing_name_start;
-        if is_platform {
-            if closing_name.string == self.platform_parent {
-                self.current_platform_namespace = None
-            }
-
-            closing_name.string.insert(0, ':');
-        }
-
-        // we check to ensure that the widget's name itself is non-erroneous,
-        // as it is nonsensical to report that the tags don't match when the name
-        // itself is illegal
-        if self.src.view_span(name) != closing_name.string {
+        if !matching_name.is_name_match(&tag_name) {
             // look for candidate
             let mut candidate_exists = false;
 
             for (mut i, open) in self.open_tags.iter().rev().enumerate() {
-                if closing_name.string == self.src.view_span(open) {
+                if tag_name.is_name_match(open) {
                     candidate_exists = true;
-                    self.last_closed_tag = closing_name.span;
+                    self.last_closed_tag = tag_name.clone();
 
                     // we have found a match. now, we can safely pop all the tags
                     // we pop until we hit i = 0, which means the tag at the top
@@ -772,19 +797,19 @@ impl<'a> Parser<'a> {
             }
 
             if candidate_exists {
-                self.emit_unclosed_tag(name, closing_name.span);
+                self.emit_unclosed_tag(matching_name.span(), tag_name.span());
                 self.restore(tag_start);
                 return;
             } else {
-                self.emit_mismatched_tag(name, closing_name.span);
+                self.emit_mismatched_tag(matching_name.span(), tag_name.span());
             }
         }
 
         // pop the currently open tag
         self.open_tags.pop();
 
-        if self.last_closed_tag == closing_name.span {
-            self.last_closed_tag = ERRONEOUS_SPAN;
+        if self.last_closed_tag.is_name_match(&tag_name) {
+            self.last_closed_tag = TagName::default();
         }
 
         if !self.eat(">") {
@@ -792,57 +817,67 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_widget(
+    fn parse_tag(
         &mut self,
-        mut elem: Widget,
+        mut tag: Tag,
         is_self_closing: bool,
     ) -> FragmentNode {
-        if !elem.is_platform {
-            let key = &elem.name.string;
-
-            if !self.module.dependencies.contains_key(key)
-                && !RESERVED_TAGS.contains(&key.as_str())
-            {
-                self.module.dependencies.insert(key.clone(), elem.name.span);
+        // register dependencies
+        match tag.name.namespace {
+            Some(TagNamespace::Custom(_)) => {
+                // TODO: add support for custom namespaces
+                todo!("Custom namespaces not supported");
             }
+
+            None => {
+                let key = &tag.name.name.string;
+
+                if !self.module.dependencies.contains_key(key)
+                    && !RESERVED_TAGS.contains(&key.as_str())
+                {
+                    self.module
+                        .dependencies
+                        .insert(key.clone(), tag.name.span());
+                }
+            }
+
+            _ => (),
         }
 
         if is_self_closing {
-            return FragmentNode::Widget(elem);
+            return FragmentNode::Tag(tag);
         }
 
-        let fragment = self.parse_fragment(&[FragmentEnd::Widget]);
+        let fragment = self.parse_fragment(&[FragmentEnd::Tag]);
 
-        elem.fragment = Some(fragment);
+        tag.fragment = Some(fragment);
 
         // if we have hit EOF before trying to parse the close tag,
         // the current tag was never closed
         if self.peek(0) == 0 {
-            if self.last_closed_tag.start > elem.name.span.start {
-                self.emit_unclosed_tag(elem.name.span, self.last_closed_tag);
+            if self.last_closed_tag.span().start > tag.name.span().start {
+                self.emit_unclosed_tag(
+                    tag.name.span(),
+                    self.last_closed_tag.span(),
+                );
             } else {
-                self.emit_unclosed_tag_eof(elem.name.span);
+                self.emit_unclosed_tag_eof(tag.name.span());
             }
 
-            return FragmentNode::Widget(elem);
+            return FragmentNode::Tag(tag);
         }
 
         // we will look for a closing tag only if the open_tags stack is non-empty
-        // and the current top of the stack is equal to elem.name (compare spans' start and end)
+        // and the current top of the stack is equal to tag.name (compare TagName, including spans)
         // this is done because IF the stary-close-block handler deems us closed in order to recover,
         // we needn't look for a closing tag.
         if !self.open_tags.is_empty()
-            && self.open_tags.last().unwrap() == &elem.name.span
+            && self.open_tags.last().unwrap() == &tag.name
         {
-            self.parse_close_tag(elem.name.span);
+            self.parse_close_tag(&tag.name);
         }
 
-        if elem.is_platform {
-            // remove the ':' in the string representation.
-            elem.name.string.remove(0);
-        }
-
-        FragmentNode::Widget(elem)
+        FragmentNode::Tag(tag)
     }
 
     fn handle_stray_closing_tag(&mut self) {
@@ -875,12 +910,11 @@ impl<'a> Parser<'a> {
 
         self.consume_whitespace();
 
-        let closing_name_start = self.pos;
+        let closing_name = self.parse_tag_name();
+        let closing_span = closing_name.span();
 
         // we will synchronize to either '>' or a whitespace
         self.synchronize(&[">", " ", "\n", "\t"]);
-
-        let closing_name = Span::new(closing_name_start, self.pos);
 
         // find a candidate in the open_tags stack
         let mut candidate_exists = false;
@@ -888,8 +922,9 @@ impl<'a> Parser<'a> {
         while !self.open_tags.is_empty() {
             let open = self.open_tags.pop().unwrap();
 
-            if self.src.view_span(closing_name) == self.src.view_span(open) {
+            if closing_name.is_name_match(&open) {
                 candidate_exists = true;
+
                 self.last_closed_tag = closing_name;
 
                 // we push it back to the open_controls stack as the actual control
@@ -903,7 +938,7 @@ impl<'a> Parser<'a> {
             // we have found a match. we can now report the unclosed control block,
             // pop it, and restore the cursor
             let open = self.open_controls.pop().unwrap();
-            self.emit_unclosed_control(open, closing_name);
+            self.emit_unclosed_control(open, closing_span);
             self.restore(restore_pos);
         } else {
             // no match. actual stray.
@@ -971,7 +1006,7 @@ impl<'a> Parser<'a> {
             // we have found a match. we can now report the unclosed tag, pop it,
             // and restore the cursor
             let open = self.open_tags.pop().unwrap();
-            self.emit_unclosed_tag(open, closing_name);
+            self.emit_unclosed_tag(open.span(), closing_name);
             self.restore(restore_pos);
         } else {
             // no match. actual stray.
@@ -993,7 +1028,7 @@ impl<'a> Parser<'a> {
         // b' ' is passed here to keep the API simple
         // rather than introducing an Option<u8>
         let name = self.parse_ident(&[b' ']);
-        if name.span == ERRONEOUS_SPAN {
+        if name.span == EMPTY_SPAN {
             self.emit_invalid_control_name(name.span.start, name.span.end);
         }
 
@@ -1075,7 +1110,7 @@ impl<'a> Parser<'a> {
             if self.last_closed_control
                 == Span::new(closing_name_start, self.pos)
             {
-                self.last_closed_control = ERRONEOUS_SPAN;
+                self.last_closed_control = EMPTY_SPAN;
             }
 
             return;
@@ -1116,7 +1151,7 @@ impl<'a> Parser<'a> {
         self.open_controls.pop();
 
         if self.last_closed_control == closing_name {
-            self.last_closed_control = ERRONEOUS_SPAN;
+            self.last_closed_control = EMPTY_SPAN;
         }
 
         if !self.eat("}") {
@@ -1146,7 +1181,7 @@ impl<'a> Parser<'a> {
 
         let span = self.module.get_expression(expr).source.span;
 
-        if span == ERRONEOUS_SPAN {
+        if span == EMPTY_SPAN {
             self.emit_expected_control_expression(control_start, "if");
         }
 
@@ -1162,7 +1197,7 @@ impl<'a> Parser<'a> {
         // while we have {:, we have to parse elif, else
         let mut elifs = Vec::new();
         let mut else_body = None;
-        let mut else_start = ERRONEOUS_SPAN;
+        let mut else_start = EMPTY_SPAN;
 
         loop {
             let closing_start = self.pos;
@@ -1241,7 +1276,7 @@ impl<'a> Parser<'a> {
 
         let span = self.module.get_expression(expr).source.span;
 
-        if span == ERRONEOUS_SPAN {
+        if span == EMPTY_SPAN {
             self.emit_expected_control_expression(case_start, "elif");
         }
 
@@ -1300,7 +1335,7 @@ impl<'a> Parser<'a> {
 
         let context_start = self.pos; // record for diagnostics
         let context = self.parse_ident(&[b' ']);
-        if context.span == ERRONEOUS_SPAN {
+        if context.span == EMPTY_SPAN {
             self.emit_invalid_each_context_name(context_start, self.pos);
         }
 
@@ -1341,19 +1376,19 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_script_tag(&mut self, open: Span) {
+    fn parse_script_tag(&mut self, open: &TagName) {
         if let Some(script) = &self.script {
-            self.emit_multiple_script_tags(script.open, open);
+            self.emit_multiple_script_tags(script.open, open.span());
         }
 
-        if let Some(&tag) = self.open_tags.last()
+        if let Some(tag) = self.open_tags.last()
             && tag != open
         {
-            self.emit_nested_script_tag(open, tag);
+            self.emit_nested_script_tag(open.span(), tag.span());
         }
 
         if let Some(&control) = self.open_controls.last() {
-            self.emit_nested_script_tag(open, control);
+            self.emit_nested_script_tag(open.span(), control);
         }
 
         let source = self.identify_guest_boundary("</");
@@ -1361,12 +1396,15 @@ impl<'a> Parser<'a> {
         self.consume_whitespace();
 
         if self.peek(0) == 0 {
-            self.emit_unclosed_tag_eof(open); // reach fatal eof
+            self.emit_unclosed_tag_eof(open.span()); // reach fatal eof
         }
 
         self.parse_close_tag(open);
 
-        self.script = Some(ParsedScript { open, source });
+        self.script = Some(ParsedScript {
+            open: open.span(),
+            source,
+        });
     }
 
     fn preprocess_script(

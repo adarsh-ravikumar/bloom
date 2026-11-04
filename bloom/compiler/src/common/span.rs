@@ -8,7 +8,7 @@ pub struct Span {
     pub end: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 // SpannedString uses where there is an erroneous span, I will deliberately allocate a new empty string.
 // I do NOT want to deal with match! or Options. If you (the reader of this code, if there is any)
 // think that I have committed a crime against humanity, feel free to contribute :)
@@ -17,10 +17,16 @@ pub struct SpannedString {
     pub string: String,
 }
 
+impl fmt::Display for SpannedString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.string)
+    }
+}
+
 impl Default for SpannedString {
     fn default() -> Self {
         SpannedString {
-            span: ERRONEOUS_SPAN,
+            span: EMPTY_SPAN,
             string: String::new(),
         }
     }
@@ -47,7 +53,7 @@ impl fmt::Display for Span {
     }
 }
 
-pub static ERRONEOUS_SPAN: Span = Span { start: 0, end: 0 };
+pub static EMPTY_SPAN: Span = Span { start: 0, end: 0 };
 
 impl Span {
     pub fn new(start: usize, end: usize) -> Self {

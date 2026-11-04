@@ -80,46 +80,6 @@ class Derived extends State {
   }
 }
 
-class Event {
-  _listeners = [];
-
-  constructor(onEvent) {
-    this._onEvent = onEvent;
-  }
-
-  emit(e) {
-    try {
-      const v = this._onEvent(e);
-
-      for (const listener of this._listeners)
-        listener(v);
-
-    } catch (e) {
-      throw e;
-    }
-  }
-
-  listen(listener) {
-    this._listeners.push(listener);
-  }
-}
-
-// class EventMap {
-//   _map = {};
-//
-//   constructor(map) {
-//     this._map = map;
-//   }
-//
-//   on(event, on) {
-//     this._map[event].listen(on)
-//   }
-//
-//   emit(event, e = undefined) {
-//     this._map[event].emit(e);
-//   }
-// }
-
 class EventMap {
   _listeners = {};
 
@@ -142,6 +102,7 @@ class EventMap {
 class Parts {
   constructor(generator) {
     this.dom = document.createElement("span");
+
     this.generator = new Derived(generator);
 
     this.dom.innerText = this.generator.value;
@@ -230,16 +191,19 @@ class Text {
 
     const w3 = new Platform("p");
 
+    const w4 = new Slot(undefined);
+    this.slot = w4;
+
     // const w4 = new Parts(() => `Hello, world! ${this.attrib.value}\n\t${this.value.value}`)
-
-    const w4 = new Parts([
-      `Hello, world! `,
-      new Derived(() => `${this.attrib.value}`),
-      `\n\t`,
-      new Derived(() => `${this.value.value}`),
-    ])
-
-    w3.addChild(w4);
+    //
+    // const w4 = new Parts([
+    //   `Hello, world! `,
+    //   new Derived(() => `${this.attrib.value}`),
+    //   `\n\t`,
+    //   new Derived(() => `${this.value.value}`),
+    // ])
+    //
+    // w3.addChild(w4);
     this.root.addChild(w3);
   }
 }
