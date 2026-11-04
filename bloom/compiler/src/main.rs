@@ -31,30 +31,30 @@ fn main() {
             Source::from_path("sandbox/widgets/button.bloom").unwrap(),
         ),
         (
-            "container",
+            "column",
             ModuleType::Widget,
-            Source::from_path("sandbox/widgets/container.bloom").unwrap(),
+            Source::from_path("sandbox/widgets/column.bloom").unwrap(),
         ),
-        // (
-        //     "counter",
-        //     ModuleType::Widget,
-        //     Source::from_path("sandbox/widgets/counter.bloom").unwrap(),
-        // ),
-        // (
-        //     "view",
-        //     ModuleType::Widget,
-        //     Source::from_path("sandbox/widgets/view.bloom").unwrap(),
-        // ),
-        // (
-        //     "column",
-        //     ModuleType::Widget,
-        //     Source::from_path("sandbox/widgets/column.bloom").unwrap(),
-        // ),
-        // (
-        //     "row",
-        //     ModuleType::Widget,
-        //     Source::from_path("sandbox/widgets/column.bloom").unwrap(),
-        // ),
+        (
+            "row",
+            ModuleType::Widget,
+            Source::from_path("sandbox/widgets/row.bloom").unwrap(),
+        ),
+        (
+            "todo",
+            ModuleType::Widget,
+            Source::from_path("sandbox/widgets/todo.bloom").unwrap(),
+        ),
+        (
+            "input",
+            ModuleType::Widget,
+            Source::from_path("sandbox/widgets/input.bloom").unwrap(),
+        ),
+        (
+            "task",
+            ModuleType::Widget,
+            Source::from_path("sandbox/widgets/task.bloom").unwrap(),
+        ),
         // (
         //     "slider",
         //     ModuleType::Widget,
@@ -153,9 +153,9 @@ fn main() {
             let mut ir_gen = TemplateIrGen::new(root, &slots);
             ir_gen.generate_ir();
 
-            for node in &ir_gen.ir_nodes {
-                println!("{node:?}");
-            }
+            // for node in &ir_gen.ir_nodes {
+            //     println!("{node:?}");
+            // }
 
             println!("\nCodegen Result:\n");
             let mut codegen = GenerateTemplateJs::new(
@@ -165,11 +165,12 @@ fn main() {
                 &module.symbol_uses,
                 &module.expressions,
                 &exposed_events_map,
+                slots.get(&module.name),
             );
 
             let res = codegen.generate();
-
-            println!("{res}");
+            //
+            // println!("{res}");
             write!(&mut compiled_result, "{res}");
         }
     }

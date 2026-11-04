@@ -121,12 +121,14 @@ impl<'a> AttributeAnalyzer<'a> {
                     let expr = &current_module.expressions[*e];
                     if expr.is_lone_identifier {
                         // check if this member exists in the current module
-                        let event_name = utils::normalize_case(
-                            expr.source.string.trim(),
-                            utils::Case::SnakeCase,
-                        );
+                        //
+                        // let event_name = utils::normalize_case(
+                        //     expr.source.string.trim(),
+                        //     utils::Case::SnakeCase,
+                        // );
+                        let event_name = expr.source.string.trim();
 
-                        if current_module.metadata.get(&event_name).is_some() {
+                        if current_module.metadata.get(event_name).is_some() {
                             // remap case. nothing to do.
                             println!(
                                 "remapping event `{}` to `{}`",

@@ -3,6 +3,7 @@ use std::fmt::{Write, write};
 
 use std::collections::HashMap;
 
+use crate::module::SlotMembers;
 use crate::{
     common::{EMPTY_SPAN, Span, SpannedString},
     ir::IrNode,
@@ -16,9 +17,10 @@ use crate::{
 pub struct GenerateTemplateJs<'a> {
     ir: &'a [IrNode],
     metadata: &'a ModuleMetadata,
-    symbol_uses: &'a HashMap<usize, Vec<SymbolUse>>,
+    symbol_uses: &'a Vec<SymbolUse>,
     expressions: &'a [Expression],
     module_name: &'a str,
+    slot: Option<&'a SlotMembers>,
     buffer: String,
     exposed_event_map: &'a HashMap<String, Option<String>>,
 }
@@ -34,9 +36,10 @@ impl<'a> GenerateTemplateJs<'a> {
         ir: &'a [IrNode],
         module_name: &'a str,
         metadata: &'a ModuleMetadata,
-        symbol_uses: &'a HashMap<usize, Vec<SymbolUse>>,
+        symbol_uses: &'a Vec<SymbolUse>,
         expressions: &'a [Expression],
         exposed_event_map: &'a HashMap<String, Option<String>>,
+        slot: Option<&'a SlotMembers>,
     ) -> Self {
         Self {
             ir,
@@ -46,6 +49,7 @@ impl<'a> GenerateTemplateJs<'a> {
             expressions,
             buffer: String::new(),
             exposed_event_map,
+            slot,
         }
     }
 
@@ -58,6 +62,7 @@ impl<'a> GenerateTemplateJs<'a> {
         let mut res = String::new();
 
         let mut prev_use_end = 0usize;
+        println!("{sites:?}");
 
         for r#use in sites {
             let span_str = &r#use.r#use;
@@ -68,6 +73,11 @@ impl<'a> GenerateTemplateJs<'a> {
 
             // push string before use
             res.push_str(&source[prev_use_end..span.start]);
+
+            if r#use.object_property_shorthand {
+                res.push_str(&span_str.string);
+                res.push_str(": ");
+            }
 
             // transform the use
             match r#use.r#type {
@@ -88,16 +98,23 @@ impl<'a> GenerateTemplateJs<'a> {
                 | SymbolUseType::GlobalFunction => {
                     res.push_str("this.");
 
-                    let name = utils::normalize_case(
+                    // let name = utils::normalize_case(
+                    //     &span_str.string,
+                    //     utils::Case::CamelCase,
+                    // );
+
+                    res.push_str(&span_str.string);
+                }
+
+                SymbolUseType::TemplateContext => {
+                    let state_name = utils::normalize_case(
                         &span_str.string,
                         utils::Case::CamelCase,
                     );
 
-                    res.push_str(&name);
-                }
+                    res.push_str(&state_name);
 
-                SymbolUseType::TemplateContext => {
-                    todo!("Template context resolution");
+                    res.push_str(".value");
                 }
 
                 SymbolUseType::Local | SymbolUseType::Unknown => {
@@ -127,12 +144,40 @@ impl<'a> GenerateTemplateJs<'a> {
         }
     }
 
-    fn rewrite_context_in_script(
-        &self,
-        source: &SpannedString,
-        context: usize,
-    ) -> String {
-        let symbol_uses = self.symbol_uses.get(&context).unwrap();
+    fn rewrite_span_in_script(&self, source: &SpannedString) -> String {
+        let mut l = 0usize;
+        let mut r = self.symbol_uses.len();
+
+        // find first use with start >= source.span.start
+        while l < r {
+            let mid = l + (r - l) / 2;
+
+            if self.symbol_uses[mid].r#use.span.start < source.span.start {
+                l = mid + 1;
+            } else {
+                r = mid;
+            }
+        }
+
+        let start = l;
+
+        let mut l = start;
+        let mut r = self.symbol_uses.len();
+
+        // find first use with start > source.span.end
+        while l < r {
+            let mid = l + (r - l) / 2;
+
+            if self.symbol_uses[mid].r#use.span.start <= source.span.end {
+                l = mid + 1;
+            } else {
+                r = mid;
+            }
+        }
+
+        let end = l;
+
+        let symbol_uses = &self.symbol_uses[start..end];
 
         if symbol_uses.is_empty() {
             source.string.clone()
@@ -237,8 +282,6 @@ impl<'a> GenerateTemplateJs<'a> {
                                     utils::Case::PascalCase
                                 )
                             );
-
-                            write_buffer!(self, "w{id}.build();\n");
                         }
                     }
                 }
@@ -258,6 +301,7 @@ impl<'a> GenerateTemplateJs<'a> {
                 }
 
                 IrNode::EndTag { id, parent } => {
+                    write_buffer!(self, "w{id}.build();\n");
                     if *parent == 0 {
                         write_buffer!(self, "this.appendChild(w{id});\n");
                     } else {
@@ -378,24 +422,17 @@ impl<'a> GenerateTemplateJs<'a> {
                         String::from("this.slot")
                     };
 
-                    write_buffer!(self, "{accessor} = new Slot();\n");
-
                     if *parent == 0usize {
-                        write_buffer!(
-                            self,
-                            "this.root.appendChild({accessor}.build());\n"
-                        )
+                        write_buffer!(self, "this.appendChild({accessor});\n")
                     } else {
                         write_buffer!(
                             self,
-                            "w{parent}.appendChild({accessor}.build());\n"
+                            "w{parent}.appendChild({accessor});\n"
                         )
                     }
                 }
 
-                IrNode::StartIfBlock { test, id } => {
-                    let expression = self.rewrite_expression(*test);
-
+                IrNode::StartIfBlock { id } => {
                     write_buffer!(
                         self,
                         "const condition{id} = new Conditional();\n"
@@ -403,10 +440,19 @@ impl<'a> GenerateTemplateJs<'a> {
                 }
 
                 IrNode::EndIfBlock { id, parent } => {
-                    write_buffer!(
-                        self,
-                        "w{parent}.appendChild(condition{id});\ncondition{id}.update();\n"
-                    )
+                    if *parent == 0 {
+                        write_buffer!(
+                            self,
+                            "this.appendChild(condition{id});\n"
+                        )
+                    } else {
+                        write_buffer!(
+                            self,
+                            "w{parent}.appendChild(condition{id});\n"
+                        )
+                    }
+
+                    write_buffer!(self, "condition{id}.update();\n")
                 }
 
                 IrNode::StartCaseBlock {
@@ -435,6 +481,44 @@ impl<'a> GenerateTemplateJs<'a> {
                     write_buffer!(self, "}});\n")
                 }
 
+                IrNode::StartEachBlock {
+                    iterable,
+                    id,
+                    context,
+                    key,
+                } => {
+                    let expression = self.rewrite_expression(*iterable);
+
+                    write_buffer!(self, "const each{id} = new Each(");
+
+                    if let Some(key) = key {
+                        let key = self.rewrite_expression(*key);
+                        write_buffer!(self, "({context}) => {key}, ")
+                    } else {
+                        write_buffer!(self, "undefined, ")
+                    }
+
+                    write_buffer!(
+                        self,
+                        "new Derived(() => {expression}), ({context}, w{id}) => {{\n"
+                    );
+                }
+
+                IrNode::EndEachBlock { id, parent } => {
+                    if *parent == 0 {
+                        write_buffer!(
+                            self,
+                            "}});\nthis.appendChild(each{id});"
+                        );
+                    } else {
+                        write_buffer!(
+                            self,
+                            "}});\nw{parent}.appendChild(each{id});\n"
+                        );
+                    }
+
+                    write_buffer!(self, "each{id}.update();\n");
+                }
                 _ => continue,
             }
         }
@@ -448,8 +532,7 @@ impl<'a> GenerateTemplateJs<'a> {
                         panic!("Function {name} cannot be None")
                     });
 
-                    let body =
-                        self.rewrite_context_in_script(&e.body, e.context);
+                    let body = self.rewrite_span_in_script(&e.body);
 
                     write_buffer!(
                         self,
@@ -470,8 +553,7 @@ impl<'a> GenerateTemplateJs<'a> {
                 }
 
                 ModuleMemberType::Function(f) => {
-                    let body =
-                        self.rewrite_context_in_script(&f.body, f.context);
+                    let body = self.rewrite_span_in_script(&f.body);
 
                     write_buffer!(
                         self,
@@ -617,6 +699,23 @@ impl<'a> GenerateTemplateJs<'a> {
             write_buffer!(self, "\"{e}\", ");
         }
         write_buffer!(self, "]);\n");
+
+        // slots
+        if let Some(slot) = self.slot {
+            match slot {
+                SlotMembers::Unnamed => {
+                    write_buffer!(self, "this.slot = new Slot();\n");
+                }
+
+                SlotMembers::Named(slots) => {
+                    write_buffer!(self, "this.slot = {{");
+                    for (name, _) in slots {
+                        write_buffer!(self, "\"{name}\": new Slot(),");
+                    }
+                    write_buffer!(self, "}};\n");
+                }
+            }
+        }
     }
 
     pub fn generate(&mut self) -> String {
@@ -646,7 +745,7 @@ impl<'a> GenerateTemplateJs<'a> {
 
         self.generate_build();
 
-        write!(&mut res, "build () {{\n{}\nreturn this;}}\n", self.buffer)
+        write!(&mut res, "build () {{\n{}\n}}\n", self.buffer)
             .expect("Write to result buffer failed");
 
         write!(&mut res, "}}\n").expect("Write to result buffer failed");

@@ -34,6 +34,9 @@ pub struct Parser<'a> {
     last_closed_tag: TagName,
     last_closed_control: Span,
 
+    // context variable handling
+    context_vars: Vec<String>,
+
     // platform handling
     platform_parent: String,
     current_platform_tag_type: Option<PlatformNamespace>,
@@ -61,6 +64,8 @@ impl<'a> Parser<'a> {
             open_controls: Vec::new(),
             last_closed_tag: TagName::default(),
             last_closed_control: EMPTY_SPAN,
+
+            context_vars: Vec::new(),
 
             platform_parent: String::default(),
             current_platform_tag_type: None,
@@ -306,7 +311,9 @@ impl<'a> Parser<'a> {
 
     fn parse_embedded_expression(&mut self, delim: &str) -> ExpressionId {
         let source = self.identify_guest_boundary(delim);
-        let mut expr = Expression::new(source);
+        let mut expr = Expression::new(source, self.context_vars.clone());
+
+        println!("EXPRESSION: {expr:?}");
 
         self.script_analyzer
             .parse_expression(&mut expr, &self.oxc_allocator);
@@ -1339,10 +1346,33 @@ impl<'a> Parser<'a> {
             self.emit_invalid_each_context_name(context_start, self.pos);
         }
 
+        self.context_vars.push(context.string.clone());
+
         self.consume_whitespace();
 
-        // this will track the case 'in}' as well, helping us catch "missing expression"
-        if !self.is_valid_control_terminator("in") {
+        // key
+        let expr_start = self.pos;
+        let key = if self.eat("{") {
+            let key = self.parse_embedded_expression("}");
+            self.consume_whitespace();
+
+            if self.peek(0) == 0 {
+                // expression was not closed
+                self.emit_unclosed_expression(expr_start);
+            }
+
+            self.eat("}");
+
+            Some(key)
+        } else {
+            None
+        };
+
+        self.consume_whitespace();
+
+        println!("{}, {}", self.pos, self.src.get(self.pos) as char);
+
+        if !self.eat("in") {
             self.emit_expected_each_in(context.span);
         }
 
@@ -1369,9 +1399,12 @@ impl<'a> Parser<'a> {
 
         let body = self.parse_fragment(&[FragmentEnd::ControlEnd]);
 
+        self.context_vars.pop();
+
         Control::Each(EachControl {
             expression: expr,
             context,
+            key,
             body,
         })
     }
@@ -1560,7 +1593,8 @@ impl<'a> Parser<'a> {
                 println!("canonical name for {fn_name} is {canonical_name}");
 
                 metadata.insert(
-                    canonical_name,
+                    // canonical_name,
+                    fn_name,
                     match directive {
                         COMMAND => ModuleMemberType::Command(None),
                         EVENT => ModuleMemberType::Event(None),

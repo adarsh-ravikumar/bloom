@@ -23,17 +23,14 @@ impl<'a> ExpressionAnalyzer<'a> {
                 // we need to check only the delta interface, as any members that were
                 // declared before the semantic pass are already resolved.
 
-                let canonical_name = utils::normalize_case(
-                    &symbol_use.r#use.string,
-                    utils::Case::SnakeCase,
-                );
-
-                if !matches!(symbol_use.r#type, SymbolUseType::Local)
-                    && let Some(member) = self
-                        .interface_delta
-                        .get(module_name)
-                        .unwrap()
-                        .get(&canonical_name)
+                if !matches!(
+                    symbol_use.r#type,
+                    SymbolUseType::Local | SymbolUseType::TemplateContext
+                ) && let Some(member) = self
+                    .interface_delta
+                    .get(module_name)
+                    .unwrap()
+                    .get(&symbol_use.r#use.string)
                 {
                     match &member {
                         ModuleMemberType::Event(_)

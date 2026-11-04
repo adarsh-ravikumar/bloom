@@ -36,20 +36,20 @@ pub enum IrNode {
     DeclareSlot { name: Option<String>, parent: NodeId },
 
     StartAttributeList,
-    AttributeName { name: String, id: NodeId },
+    AttributeName { name: String, id: NodeId},
     AttributeBindEvent { event: String, id: NodeId },
     AttributeExposeEvent { source_event: String,  id: NodeId, tag_id: ExpressionId},
     AttributeBindState { from: String, to: String, id: NodeId, has_value: bool},
     AttributeTrue,
     EndAttributeList,
 
-    StartIfBlock { test: ExpressionId, id: NodeId},
+    StartIfBlock { id: NodeId},
     EndIfBlock { id: NodeId, parent: NodeId },
 
     StartCaseBlock { test: Option<ExpressionId>, id: NodeId, parent_block: NodeId},
     EndCaseBlock,
 
-    StartEachBlock { iterable: ExpressionId, id: NodeId},
+    StartEachBlock { iterable: ExpressionId, id: NodeId, context: String, key: Option<ExpressionId>},
     EndEachBlock { id: NodeId, parent: NodeId },
 }
 
@@ -276,6 +276,7 @@ impl<'a> TemplateIrGen<'a> {
                                 parent: id,
                                 id: slot_id,
                             });
+
                             self.visit_fragment(frag, slot_id);
                         }
 
@@ -287,6 +288,8 @@ impl<'a> TemplateIrGen<'a> {
                     self.emit_node(IrNode::EndTag { id, parent });
                 }
             }
+        } else {
+            self.emit_node(IrNode::EndTag { id, parent });
         }
     }
 
@@ -300,10 +303,7 @@ impl<'a> TemplateIrGen<'a> {
     fn visit_if(&mut self, if_ctrl: &IfControl, parent: NodeId) {
         let if_id = self.get_node_id();
 
-        self.emit_node(IrNode::StartIfBlock {
-            test: if_ctrl.condition,
-            id: if_id,
-        });
+        self.emit_node(IrNode::StartIfBlock { id: if_id });
 
         self.emit_node(IrNode::StartCaseBlock {
             test: Some(if_ctrl.condition),
@@ -352,6 +352,8 @@ impl<'a> TemplateIrGen<'a> {
         // TODO: handle visit expression parent here
         self.emit_node(IrNode::StartEachBlock {
             iterable: each_ctrl.expression,
+            context: each_ctrl.context.string.clone(),
+            key: each_ctrl.key,
             id: each_id,
         });
 

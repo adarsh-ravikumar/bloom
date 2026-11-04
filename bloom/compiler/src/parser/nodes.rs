@@ -149,6 +149,7 @@ pub struct EachControl {
     pub expression: ExpressionId,
     pub context: SpannedString,
     pub body: Fragment,
+    pub key: Option<ExpressionId>,
 }
 
 // Attribute

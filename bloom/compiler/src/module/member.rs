@@ -28,6 +28,7 @@ pub struct SymbolUse {
     pub canonical_name: String,
     pub r#type: SymbolUseType,
     pub context: usize,
+    pub object_property_shorthand: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -41,11 +42,11 @@ pub struct Expression {
 pub type ExpressionId = usize;
 
 impl Expression {
-    pub fn new(source: SpannedString) -> Self {
+    pub fn new(source: SpannedString, context_vars: Vec<String>) -> Self {
         Self {
             source,
             is_lone_identifier: false,
-            context_vars: Vec::new(),
+            context_vars,
             symbol_uses: Vec::new(),
         }
     }

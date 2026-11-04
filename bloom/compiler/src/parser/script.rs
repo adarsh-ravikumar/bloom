@@ -1,6 +1,7 @@
 use std::{collections::HashMap, hash::Hash};
 
 use crate::{
+    analysis::Platform,
     common::{EMPTY_SPAN, Span, SpannedString},
     module::{
         Expression, Function, Module, ModuleMemberType, SymbolUse,
@@ -48,6 +49,7 @@ pub struct ScriptAnalyzer {
     pub context_tree: Vec<SymbolTable>,
     pub uses: Vec<SymbolUse>,
     pub current_source: String,
+    pub object_property_shorthand_context: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -143,6 +145,7 @@ where
             current_source: String::new(),
             context_tree: Vec::new(),
             uses: Vec::new(),
+            object_property_shorthand_context: false,
         }
     }
 
@@ -235,6 +238,8 @@ where
                  * - span: oxc_span::Span
                  */
 
+                println!("[{context}] pushing: {}", self.view_span(expr.span));
+
                 uses.get_mut(&context).unwrap().push(SymbolUse {
                     r#use: SpannedString {
                         span: Span::from(expr.span),
@@ -242,7 +247,8 @@ where
                     },
                     canonical_name: String::default(),
                     context,
-
+                    object_property_shorthand: self
+                        .object_property_shorthand_context,
                     // mark as unknown by default. we do not know yet.
                     r#type: SymbolUseType::Unknown,
                 });
@@ -525,7 +531,12 @@ where
                          * - value: oxc_ast::ast::Expression<'a>
                          */
                         OxcObjectPropertyKind::ObjectProperty(obj) => {
+                            self.object_property_shorthand_context =
+                                obj.key.span() == obj.value.span();
+
                             self.expression(context, &obj.value, uses);
+
+                            self.object_property_shorthand_context = false;
                         }
 
                         /*
@@ -791,7 +802,8 @@ where
                                     },
                                     canonical_name: String::default(),
                                     context,
-
+                                    object_property_shorthand: self
+                                        .object_property_shorthand_context,
                                     // mark as unknown by default. we do not know yet.
                                     r#type: SymbolUseType::Unknown
                                 }
@@ -833,7 +845,8 @@ where
                     },
                     canonical_name: String::default(),
                     context,
-
+                    object_property_shorthand: self
+                        .object_property_shorthand_context,
                     // mark as unknown by default. we do not know yet.
                     r#type: SymbolUseType::Unknown,
                 });
@@ -1040,42 +1053,42 @@ where
                 let canonical_name =
                     utils::normalize_case(&ident.name, utils::Case::SnakeCase);
 
-                if self.context_tree[context]
-                    .symbols
-                    .contains_key(&canonical_name)
-                {
-                    // TODO: diagnostics
-                    println!("Name collision for identifier {}", &ident.name);
-                } else {
-                    match &mut symbol {
-                        Symbol::Variable(v) => {
-                            v.source_name = ident.name.to_string();
-                            v.canonical_name = canonical_name.clone();
-                        }
-
-                        Symbol::Parameter {
-                            source_name,
-                            canonical_name,
-                            ..
-                        } => {
-                            *source_name = ident.name.to_string();
-                            *canonical_name = canonical_name.clone();
-                        }
-
-                        Symbol::ParameterRest {
-                            source_name,
-                            canonical_name,
-                            ..
-                        } => {
-                            *source_name = ident.name.to_string();
-                            *canonical_name = canonical_name.clone();
-                        }
-
-                        _ => unreachable!(),
+                // if self.context_tree[context]
+                //     .symbols
+                //     .contains_key(&canonical_name)
+                // {
+                //     // TODO: diagnostics
+                //     println!("Name collision for identifier {}", &ident.name);
+                // } else {
+                match &mut symbol {
+                    Symbol::Variable(v) => {
+                        v.source_name = ident.name.to_string();
+                        v.canonical_name = canonical_name.clone();
                     }
 
-                    self.insert_in_context(context, canonical_name, symbol);
+                    Symbol::Parameter {
+                        source_name,
+                        canonical_name,
+                        ..
+                    } => {
+                        *source_name = ident.name.to_string();
+                        *canonical_name = canonical_name.clone();
+                    }
+
+                    Symbol::ParameterRest {
+                        source_name,
+                        canonical_name,
+                        ..
+                    } => {
+                        *source_name = ident.name.to_string();
+                        *canonical_name = canonical_name.clone();
+                    }
+
+                    _ => unreachable!(),
                 }
+
+                self.insert_in_context(context, ident.name.to_string(), symbol);
+                // }
             }
 
             OxcBindingPattern::ObjectPattern(obj) => {
@@ -1322,6 +1335,16 @@ where
                         }
                     }
                 }
+
+                if let Some(test) = &stmt.test {
+                    self.expression(context, test, uses);
+                }
+
+                if let Some(update) = &stmt.update {
+                    self.expression(context, update, uses);
+                }
+
+                self.statement(new_context, &stmt.body, uses);
             }
 
             OxcStatement::IfStatement(stmt) => {
@@ -2184,7 +2207,7 @@ where
         &mut self,
         script: &String,
         oxc_allocator: &'a OxcAllocator,
-    ) -> HashMap<usize, Vec<SymbolUse>> {
+    ) -> Vec<SymbolUse> {
         let body = Self::parse(script, oxc_allocator);
         self.current_source = script.clone();
 
@@ -2197,7 +2220,15 @@ where
 
         self.statements(0, &body, &mut uses);
 
-        uses
+        let mut flat_uses = Vec::new();
+
+        for ctxt in uses.values_mut() {
+            flat_uses.extend(std::mem::take(ctxt));
+        }
+
+        flat_uses.sort_by_key(|a| a.r#use.span.start);
+
+        flat_uses
     }
 
     pub fn analyze(
@@ -2222,9 +2253,11 @@ where
                     } else if var.is_state {
                         ModuleMemberType::PrivateState(var.clone())
                     } else if var.is_export {
-                        ModuleMemberType::PublicVariable(var.clone())
+                        ModuleMemberType::PublicState(var.clone())
+                        // ModuleMemberType::PublicVariable(var.clone())
                     } else {
-                        ModuleMemberType::PrivateVariable(var.clone())
+                        ModuleMemberType::PrivateState(var.clone())
+                        // ModuleMemberType::PrivateVariable(var.clone())
                     };
 
                     module.metadata.insert(name.clone(), var);
@@ -2232,8 +2265,7 @@ where
 
                 // modify existing entires (populated by the preprocessor)
                 Symbol::Function(func) => {
-                    if let Some(f) =
-                        module.metadata.get_mut(&func.canonical_name)
+                    if let Some(f) = module.metadata.get_mut(&func.source_name)
                     {
                         match f {
                             ModuleMemberType::Event(e) => {
@@ -2252,7 +2284,8 @@ where
                         }
                     } else {
                         module.metadata.insert(
-                            func.canonical_name.clone(),
+                            // func.canonical_name.clone(),
+                            func.source_name.clone(),
                             ModuleMemberType::Function(func.clone()),
                         );
                     }
@@ -2287,39 +2320,41 @@ where
     }
 
     pub fn analyze_script(&mut self, module: &'a mut Module) {
-        for (context, context_uses) in module.symbol_uses.iter_mut() {
-            for symbol_use in context_uses {
-                let use_type = self
-                    .classify_symbol_use(&symbol_use.r#use.string, *context);
+        for symbol_use in module.symbol_uses.iter_mut() {
+            let use_type = self.classify_symbol_use(
+                &symbol_use.r#use.string,
+                symbol_use.context,
+            );
 
-                if matches!(use_type, SymbolUseType::GlobalUnresolved)
-                    && let Some(member) =
-                        module.metadata.get(&symbol_use.r#use.string)
-                {
-                    match &member {
-                        ModuleMemberType::Event(_)
-                        | ModuleMemberType::Command(_)
-                        | ModuleMemberType::Reactive(_)
-                        | ModuleMemberType::Function(_)
-                        | ModuleMemberType::RenamedEvent { .. }
-                        | ModuleMemberType::ExposedEvent { .. } => {
-                            symbol_use.r#type = SymbolUseType::GlobalFunction
-                        }
-
-                        ModuleMemberType::PrivateState(_)
-                        | ModuleMemberType::PublicState(_)
-                        | ModuleMemberType::StateProxy { .. } => {
-                            symbol_use.r#type = SymbolUseType::GlobalState
-                        }
-
-                        ModuleMemberType::PrivateVariable(_)
-                        | ModuleMemberType::PublicVariable(_) => {
-                            symbol_use.r#type = SymbolUseType::GlobalVariable
-                        }
-
-                        _ => continue,
+            if matches!(use_type, SymbolUseType::GlobalUnresolved)
+                && let Some(member) =
+                    module.metadata.get(&symbol_use.r#use.string)
+            {
+                match &member {
+                    ModuleMemberType::Event(_)
+                    | ModuleMemberType::Command(_)
+                    | ModuleMemberType::Reactive(_)
+                    | ModuleMemberType::Function(_)
+                    | ModuleMemberType::RenamedEvent { .. }
+                    | ModuleMemberType::ExposedEvent { .. } => {
+                        symbol_use.r#type = SymbolUseType::GlobalFunction
                     }
+
+                    ModuleMemberType::PrivateState(_)
+                    | ModuleMemberType::PublicState(_)
+                    | ModuleMemberType::StateProxy { .. } => {
+                        symbol_use.r#type = SymbolUseType::GlobalState
+                    }
+
+                    ModuleMemberType::PrivateVariable(_)
+                    | ModuleMemberType::PublicVariable(_) => {
+                        symbol_use.r#type = SymbolUseType::GlobalVariable
+                    }
+
+                    _ => continue,
                 }
+            } else {
+                symbol_use.r#type = use_type;
             }
         }
     }
