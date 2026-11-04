@@ -46,8 +46,8 @@ pub enum IrNode {
     StartIfBlock { test: ExpressionId, id: NodeId},
     EndIfBlock { id: NodeId, parent: NodeId },
 
-    StartCaseBlock { test: Option<ExpressionId>, id: NodeId},
-    EndCaseBlock { id: NodeId, parent: NodeId },
+    StartCaseBlock { test: Option<ExpressionId>, id: NodeId, parent_block: NodeId},
+    EndCaseBlock,
 
     StartEachBlock { iterable: ExpressionId, id: NodeId},
     EndEachBlock { id: NodeId, parent: NodeId },
@@ -305,7 +305,15 @@ impl<'a> TemplateIrGen<'a> {
             id: if_id,
         });
 
+        self.emit_node(IrNode::StartCaseBlock {
+            test: Some(if_ctrl.condition),
+            id: if_id,
+            parent_block: if_id,
+        });
+
         self.visit_fragment(&if_ctrl.body, if_id);
+
+        self.emit_node(IrNode::EndCaseBlock);
 
         for case in &if_ctrl.elifs {
             let case_id = self.get_node_id();
@@ -313,14 +321,12 @@ impl<'a> TemplateIrGen<'a> {
             self.emit_node(IrNode::StartCaseBlock {
                 test: Some(case.condition),
                 id: case_id,
+                parent_block: if_id,
             });
 
             self.visit_fragment(&case.body, case_id);
 
-            self.emit_node(IrNode::EndCaseBlock {
-                id: case_id,
-                parent: if_id,
-            });
+            self.emit_node(IrNode::EndCaseBlock);
         }
 
         if let Some(else_ctrl) = &if_ctrl.else_body {
@@ -329,14 +335,12 @@ impl<'a> TemplateIrGen<'a> {
             self.emit_node(IrNode::StartCaseBlock {
                 test: None,
                 id: else_id,
+                parent_block: if_id,
             });
 
             self.visit_fragment(else_ctrl, else_id);
 
-            self.emit_node(IrNode::EndCaseBlock {
-                id: else_id,
-                parent: if_id,
-            });
+            self.emit_node(IrNode::EndCaseBlock);
         }
 
         self.emit_node(IrNode::EndIfBlock { id: if_id, parent });

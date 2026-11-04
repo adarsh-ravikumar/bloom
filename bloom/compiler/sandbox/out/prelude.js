@@ -27,18 +27,26 @@ class State {
   }
 
   subscribe(subscriber) {
+    if (subscriber instanceof Derived) {
+      if (subscriber._destroyed) return;
+    }
+
     this._subscribers.push(subscriber);
   }
 
   unsubscribe(subscriber) {
     const idx = this._subscribers.indexOf(subscriber);
-    this._subscribers.splice(idx, 1);
+
+    if (idx !== -1) {
+      this._subscribers.splice(idx, 1);
+    }
   }
 }
 
 class Derived extends State {
   static _current;
   _states = new Set();
+  _destroyed = false;
 
   constructor(callback) {
     super(undefined);
@@ -48,6 +56,7 @@ class Derived extends State {
   }
 
   recompute() {
+    if (this._destroyed) return;
     // clear states, as stale states may still exist
     for (const state of this._states)
       state.unsubscribe(this._onDelta)
@@ -80,6 +89,19 @@ class Derived extends State {
 
     Derived._current.dependsOn(state);
   }
+
+
+  destroy() {
+    if (this._destroyed) return;
+    this._destroyed = true;
+
+    for (const state of this._states) {
+      state.unsubscribe(this._onDelta);
+    }
+
+    this._states.clear();
+    this._subscribers.length = 0;
+  }
 }
 
 class EventMap {
@@ -93,6 +115,14 @@ class EventMap {
 
   on(event, listener) {
     this._listeners[event].push(listener)
+
+    return () => {
+      let idx = this._listeners[event].indexOf(listener);
+
+      if (idx !== -1) {
+        this._listeners[event].splice(idx, 1);
+      }
+    }
   }
 
   emit(event, e) {
@@ -109,10 +139,35 @@ class Widget {
     }
 
     this.slot = {};
+
+    this._cleanup = [];
+    this._children = [];
+    this._destroyed = false;
   }
 
   appendChild(child) {
     this.root.appendChild(child.root)
+    this._children.push(child);
+  }
+
+  logicalDestroy() {
+    if (this._destroyed) {
+      return;
+    }
+
+    this._destroyed = true;
+
+    for (const child of this._children) {
+      child.logicalDestroy();
+    }
+
+    for (const cleanup of this._cleanup) {
+      cleanup();
+    }
+
+    this.slot = {};
+    this._children.length = 0;
+    this._cleanup.length = 0;
   }
 }
 
@@ -124,10 +179,6 @@ class Slot extends Widget {
 
   build() {
     return this;
-  }
-
-  setAttribute(attribute, value) {
-    this[attribute] = value
   }
 }
 
@@ -142,9 +193,16 @@ class Parts extends Widget {
       if (part instanceof Derived) {
         item.textContent = part.value;
 
-        part.subscribe((v) => {
+        const update = (v) => {
           item.textContent = v;
-        })
+        };
+
+        part.subscribe(update);
+
+        this._cleanup.push(() => {
+          part.unsubscribe(update);
+          part.destroy();
+        });
       } else {
         item.textContent = part;
       }
@@ -158,7 +216,6 @@ class Platform extends Widget {
   constructor(tagName) {
     super(false);
     this.root = document.createElement(tagName);
-    this.root.className = "platform";
     this.slot = this;
   }
 
@@ -169,18 +226,106 @@ class Platform extends Widget {
 
   on(ename, on) {
     this.root.addEventListener(ename, on);
+
+    return () => {
+      this.root.removeEventListener(ename, on);
+    }
   }
 
   setAttribute(attribute, value) {
     if (value instanceof Derived) {
       this.root.setAttribute(attribute, value.value);
-      value.subscribe((v) => {
+
+      const update = (v) => {
         this.root.setAttribute(attribute, v);
+      };
+      value.subscribe(update)
+
+      this._cleanup.push(() => {
+        value.unsubscribe(update);
+        value.destroy();
       })
+    } else {
+      this.root.setAttribute(attribute, value);
     }
   }
 }
 
+class CaseContainer extends Widget {
+  constructor() {
+    super();
+    this.root.className = "conditional";
+    this._destroyed = true;
+    this.factory = undefined;
+  }
+
+  instantiate(factory) {
+    if (!this._destroyed) {
+      return;
+    }
+
+    this._destroyed = false;
+    this.root.replaceChildren();
+
+    this.factory = factory;
+
+    if (this.factory) {
+      this.factory(this);
+    }
+  }
+}
+
+class Conditional extends Widget {
+  constructor() {
+    super(false);
+    this.factories = [];
+    this.defaultFactory = undefined;
+    this.conditions = [];
+
+    this.active = undefined;
+    this.caseContainer = new CaseContainer();
+    this.root = this.caseContainer.root;
+  }
+
+  case(condition, factory) {
+    if (condition instanceof Derived) {
+      const update = () => this.update();
+      condition.subscribe(update)
+      this._cleanup.push(() => condition.unsubscribe(update))
+    }
+
+    this.conditions.push(condition);
+    this.factories.push(factory);
+  }
+
+  default(factory) {
+    this.defaultFactory = factory;
+  }
+
+  update() {
+    let selected = -1;
+    for (let i = 0; i < this.conditions.length; i++) {
+      const condition = this.conditions[i];
+
+      if (condition instanceof Derived ? condition.value : condition) {
+        selected = i;
+        break;
+      }
+    }
+
+    if (selected === this.active)
+      return;
+
+    const factory =
+      (selected === -1)
+        ? this.defaultFactory
+        : this.factories[selected];
+
+    this.active = selected;
+    this.caseContainer.logicalDestroy();
+    this.caseContainer.instantiate(factory)
+  }
+}
 
 // bootstrap for testing purposes 
 function bootstrap() {

@@ -1,5 +1,5 @@
 use core::slice;
-use std::fmt::Write;
+use std::fmt::{Write, write};
 
 use std::collections::HashMap;
 
@@ -314,7 +314,7 @@ impl<'a> GenerateTemplateJs<'a> {
 
                     write_buffer!(
                         self,
-                        "w{id}.events.on(\"{event_string}\", (e) => {{(\n{expr}\n)(e);\n}});\n"
+                        "this._cleanup.push(w{id}.events.on(\"{event_string}\", (e) => {{(\n{expr}\n)(e);\n}}));\n"
                     );
                 }
 
@@ -348,7 +348,7 @@ impl<'a> GenerateTemplateJs<'a> {
 
                     write_buffer!(
                         self,
-                        "w{id}.events.on(\"{event_string}\", (e) => {{this.{fn_name}(e)}});\n"
+                        "this._cleanup.push(w{id}.events.on(\"{event_string}\", (e) => {{this.{fn_name}(e)}}));\n"
                     );
                 }
 
@@ -392,6 +392,49 @@ impl<'a> GenerateTemplateJs<'a> {
                         )
                     }
                 }
+
+                IrNode::StartIfBlock { test, id } => {
+                    let expression = self.rewrite_expression(*test);
+
+                    write_buffer!(
+                        self,
+                        "const condition{id} = new Conditional();\n"
+                    );
+                }
+
+                IrNode::EndIfBlock { id, parent } => {
+                    write_buffer!(
+                        self,
+                        "w{parent}.appendChild(condition{id});\ncondition{id}.update();\n"
+                    )
+                }
+
+                IrNode::StartCaseBlock {
+                    test,
+                    id,
+                    parent_block,
+                } => match test {
+                    Some(test) => {
+                        let expression = self.rewrite_expression(*test);
+
+                        write_buffer!(
+                            self,
+                            "condition{parent_block}.case(new Derived(() => {expression}), (w{id}) => {{\n"
+                        )
+                    }
+
+                    None => {
+                        write_buffer!(
+                            self,
+                            "condition{parent_block}.default((w{id}) => {{\n"
+                        )
+                    }
+                },
+
+                IrNode::EndCaseBlock => {
+                    write_buffer!(self, "}});\n")
+                }
+
                 _ => continue,
             }
         }
