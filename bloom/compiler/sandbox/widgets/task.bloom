@@ -1,0 +1,61 @@
+<script>
+  export let name: string;
+  export let taskId: string;
+  export let status: string;
+  export let deleteItem: (string) => void;
+  export let markDone: (string) => void;
+  export let editName: (string, string) => void;
+
+  let isEditing = false;
+  let value;
+
+  function edit () {
+    if (isEditing) {
+      isEditing = false;
+      editName(taskId, value);
+      return;
+    }
+
+    isEditing = true;
+  }
+</script>
+
+<row>
+  {#if status == "done"}
+    <text> Task Completed! </text>
+  {:else}
+    <text> In Progress </text>
+  {/if}
+
+  <column>
+    {#if isEditing}
+      <input value:value={name} />
+    {:else}
+      <text>
+        {#if status == "done"}
+          <:s> {name} </:s>
+        {:else}
+          {name}
+        {/if}
+      </text>
+    {/if}
+    <text>(id = {taskId})</text>
+    {status}
+  </column>
+
+  <button on:click={edit}>
+    {#if isEditing}
+      Save
+    {:else}
+      Edit
+    {/if}
+  </button>
+
+  <button on:click={() => deleteItem(taskId)}>
+    Delete
+  </button>
+
+  <button on:click={() => markDone(taskId)}>
+    Mark Done
+  </button>
+</row>

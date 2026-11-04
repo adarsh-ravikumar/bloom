@@ -412,6 +412,7 @@ impl<'a> GenerateTemplateJs<'a> {
                     if *has_value {
                         write_buffer!(self, "w{id}.{from}.value = ");
                         self.generate_attribute_value(&mut ir);
+                        write_buffer!(self, ";\n");
                     }
                 }
 

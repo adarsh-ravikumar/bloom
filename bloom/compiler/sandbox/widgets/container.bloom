@@ -1,3 +1,0 @@
-<:div style="outline: 2px solid limegreen; background: yellow;">
-  <slot:header />
-</:div>

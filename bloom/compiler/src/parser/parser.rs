@@ -687,6 +687,7 @@ impl<'a> Parser<'a> {
                     value: AttributeValue::Expression(expr),
                 }));
 
+                self.consume_whitespace();
                 continue;
             }
 

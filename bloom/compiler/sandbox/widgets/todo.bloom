@@ -1,0 +1,65 @@
+<script>
+  function uuid4() {
+    return Array.from(
+        { length: 4 },
+        () => Math.floor(Math.random() * 16).toString(16)
+    ).join(""); 
+  }
+
+  let items = [];
+  let task: string;
+
+  function addItem() {
+    let id = uuid4();
+    items.push({id, task, status: undefined});
+  }
+
+  function findItem(id) {
+      let idx = -1;
+      for (let i = 0; i < items.length; i ++) {
+        const task = items[i];
+
+        if (task.id == id) {
+           idx = i;
+           break;
+        }
+      }
+
+      return idx;
+  }
+
+  function editItem(id, name) {
+      let toEdit= findItem(id);
+      items[toEdit].task = name;
+  }
+
+  function deleteItem(id) {
+      let toDel = findItem(id);
+      if (toDel != -1) items.splice(toDel, 1);
+  }
+
+  function markDone(id) {
+    let toMark = findItem(id);
+    items[toMark].status = "done";
+  }
+</script>
+
+<:h1>Todo</:h1>
+<row>
+  <input value:task />
+  <button on:click={addItem}>Add Item</button>
+</row>
+
+<:h2>Tasks</:h2>
+<column>
+  {#each task {task.id} in items}
+    <task 
+      name={task.task}
+      taskId={task.id}
+      status={task.status}
+      deleteItem={(id) => deleteItem(id)}
+      markDone={(id) => markDone(id)}
+      editName={(id, name) => editItem(id, name)}
+    />
+  {/each}
+</column>

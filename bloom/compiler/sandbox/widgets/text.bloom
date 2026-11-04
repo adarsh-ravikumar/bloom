@@ -1,21 +1,3 @@
-<script>
-  const test = "";
-  export let color: string = "blue";
-</script>
-
-
-<container>
-  <slot:header>
-    <slot:header />
-  </slot:header>
-</container>
-
-<:div {test} style="background-color: {color}; color: white;">
-  <slot:counter />
-</:div>
-
-Some text in the middle cuz why not!
-
-<:div style="background-color: red; color: white;">
-  Hallo!
-</:div>
+<:p>
+  <slot />
+</:p>

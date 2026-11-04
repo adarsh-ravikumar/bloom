@@ -1,0 +1,10 @@
+<script>
+  export let value: string = "";
+    
+  #event
+  function change (event) {
+    value = event.target.value;
+  }
+</script>
+
+<:input on:change={change} type="text" {value} />
