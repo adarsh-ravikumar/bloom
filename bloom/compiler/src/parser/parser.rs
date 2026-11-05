@@ -12,7 +12,7 @@ use crate::{
 };
 
 #[derive(Default)]
-struct ParsedScript {
+struct GuestSource {
     open: Span,
     source: SpannedString,
 }
@@ -25,7 +25,8 @@ pub struct Parser<'a> {
 
     oxc_allocator: OxcAllocator,
     script_analyzer: ScriptAnalyzer,
-    script: Option<ParsedScript>,
+    script: Option<GuestSource>,
+    style: Option<GuestSource>,
     module: &'a mut Module,
 
     // stacks for handling block-related diagnostics
@@ -56,6 +57,7 @@ impl<'a> Parser<'a> {
             oxc_allocator: OxcAllocator::new(),
             script_analyzer: ScriptAnalyzer::new(),
             script: None,
+            style: None,
             module,
 
             diagnostics: Vec::new(),
@@ -84,6 +86,12 @@ impl<'a> Parser<'a> {
             script.open,
             self.preprocess_script(&mut metadata, script.source),
         );
+
+        self.module.style = if let Some(style) = &mut self.style {
+            Some(std::mem::take(&mut style.source))
+        } else {
+            None
+        };
 
         self.module.metadata = metadata;
 
@@ -184,6 +192,10 @@ impl<'a> Parser<'a> {
                         && tag.name.name.string == "script"
                     {
                         self.parse_script_tag(&tag.name)
+                    } else if tag.name.namespace.is_none()
+                        && tag.name.name.string == "style"
+                    {
+                        self.parse_style_tag(&tag.name)
                     } else {
                         nodes.push(self.parse_tag(tag, is_self_closing))
                     }
@@ -1435,7 +1447,42 @@ impl<'a> Parser<'a> {
 
         self.parse_close_tag(open);
 
-        self.script = Some(ParsedScript {
+        self.script = Some(GuestSource {
+            open: open.span(),
+            source,
+        });
+    }
+
+    fn parse_style_tag(&mut self, open: &TagName) {
+        if let Some(style) = &self.style {
+            // TODO: diagnostics
+            println!("Multiple style tags");
+        }
+
+        if let Some(tag) = self.open_tags.last()
+            && tag != open
+        {
+            // TODO: diagnostics
+            println!("Style tag cannot be nested");
+        }
+
+        if let Some(&control) = self.open_controls.last() {
+            self.emit_nested_script_tag(open.span(), control);
+            // TODO: diagnostics
+            println!("Style tag cannot be nested");
+        }
+
+        let source = self.identify_guest_boundary("</");
+
+        self.consume_whitespace();
+
+        if self.peek(0) == 0 {
+            self.emit_unclosed_tag_eof(open.span()); // reach fatal eof
+        }
+
+        self.parse_close_tag(open);
+
+        self.style = Some(GuestSource {
             open: open.span(),
             source,
         });

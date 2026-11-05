@@ -1,10 +1,7 @@
 use std::collections::HashMap;
 
-use crate::{
-    module::{
-        Expression, ModuleMemberType, ModuleMetadata, SymbolUse, SymbolUseType,
-    },
-    utils,
+use crate::module::{
+    Expression, ModuleMemberType, ModuleMetadata, SymbolUse, SymbolUseType,
 };
 
 pub struct ExpressionAnalyzer<'a> {

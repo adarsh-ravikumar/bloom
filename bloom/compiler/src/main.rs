@@ -140,6 +140,8 @@ fn main() {
 
     let mut compiled_result = String::new();
 
+    let mut style_buffer = String::new();
+
     for module in &order {
         let module = &mut registry.modules[*module];
 
@@ -171,7 +173,17 @@ fn main() {
                 slots.get(&module.name),
             );
 
-            let res = codegen.generate();
+            if let Some(style) = &module.style {
+                write!(&mut style_buffer, "{}\n", style.string);
+            }
+
+            let promote_root = if let Some(root) = &module.root {
+                root.nodes.len() == 1
+            } else {
+                false
+            };
+
+            let res = codegen.generate(promote_root);
             //
             // println!("{res}");
             write!(&mut compiled_result, "{res}");
@@ -182,6 +194,10 @@ fn main() {
         String::from_utf8(fs::read("sandbox/out/prelude.js").unwrap()).unwrap();
 
     prelude += &compiled_result;
+
+    prelude += &format!(
+        "const style = document.createElement('style');\nstyle.textContent=`{style_buffer}`;\ndocument.head.appendChild(style);"
+    );
 
     fs::write("sandbox/out/result.js", prelude);
 }

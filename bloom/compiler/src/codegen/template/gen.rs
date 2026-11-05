@@ -361,6 +361,7 @@ impl<'a> GenerateTemplateJs<'a> {
                     }
 
                     write_buffer!(self, "w{id}.setAttribute(\"{name}\", ");
+
                     self.generate_attribute_value(&mut ir);
                     write_buffer!(self, ");\n");
                 }
@@ -728,7 +729,7 @@ impl<'a> GenerateTemplateJs<'a> {
 
         write_buffer!(
             self,
-            "this.root.classList.add(\"b-{}\");\n",
+            "this.setClasses(\"BLOOM-INTRINSIC\", \"b-{}\");\n",
             self.module_name
         );
 
@@ -791,8 +792,15 @@ impl<'a> GenerateTemplateJs<'a> {
                 }
 
                 ModuleMemberType::Event(f) => {
+                    let source_name = &f.as_ref().unwrap().source_name;
+
+                    write_buffer!(
+                        self,
+                        "this.{source_name} = this.{source_name}.bind(this);\n",
+                    );
+
                     let logical_event_name = utils::normalize_case(
-                        &f.as_ref().unwrap().source_name,
+                        source_name,
                         utils::Case::SnakeCase,
                     );
 
@@ -800,6 +808,8 @@ impl<'a> GenerateTemplateJs<'a> {
                 }
 
                 ModuleMemberType::RenamedEvent { to, .. } => {
+                    write_buffer!(self, "this.{to} = this.{to}.bind(this);\n",);
+
                     event_list.push(utils::normalize_case(
                         to,
                         utils::Case::SnakeCase,
@@ -807,10 +817,38 @@ impl<'a> GenerateTemplateJs<'a> {
                 }
 
                 ModuleMemberType::ExposedEvent { prefix, event } => {
+                    let fn_name = utils::normalize_case(
+                        &format!("{prefix}_{event}"),
+                        utils::Case::CamelCase,
+                    );
+
+                    write_buffer!(
+                        self,
+                        "this.{fn_name} = this.{fn_name}.bind(this);\n",
+                    );
+
                     event_list.push(utils::normalize_case(
                         &format!("{prefix}_{event}"),
                         utils::Case::SnakeCase,
                     ));
+                }
+
+                ModuleMemberType::Command(f) => {
+                    let source_name = &f.as_ref().unwrap().source_name;
+
+                    write_buffer!(
+                        self,
+                        "this.{source_name} = this.{source_name}.bind(this);\n",
+                    );
+                }
+
+                ModuleMemberType::Function(f) => {
+                    let source_name = &f.source_name;
+
+                    write_buffer!(
+                        self,
+                        "this.{source_name} = this.{source_name}.bind(this);\n",
+                    );
                 }
 
                 ModuleMemberType::ModuleReference { source_id, .. } => {
@@ -846,7 +884,7 @@ impl<'a> GenerateTemplateJs<'a> {
         }
     }
 
-    pub fn generate(&mut self) -> String {
+    pub fn generate(&mut self, promote_root: bool) -> String {
         let mut res = String::new();
 
         let module_name =
@@ -880,12 +918,15 @@ impl<'a> GenerateTemplateJs<'a> {
 
         self.generate_build();
 
-        write!(
-            &mut res,
-            "build () {{\nconst $ = this;\n{}\n}}\n",
-            self.buffer
-        )
-        .expect("Write to result buffer failed");
+        write!(&mut res, "build () {{\nconst $ = this;\n{}\n", self.buffer,)
+            .expect("Write to result buffer failed");
+
+        if promote_root {
+            write!(&mut res, "this.setRoot(w1);\n",)
+                .expect("Write to result buffer failed");
+        }
+
+        write!(&mut res, "}}\n").expect("Write to result buffer failed");
 
         write!(&mut res, "}}\n").expect("Write to result buffer failed");
 

@@ -1,4 +1,7 @@
-use std::{collections::HashMap, hash::Hash};
+use std::{
+    collections::{HashMap, HashSet},
+    hash::Hash,
+};
 
 use crate::{
     analysis::{Platform, PlatformNamespace},
@@ -509,12 +512,25 @@ impl<'a> AttributeAnalyzer<'a> {
             return;
         }
 
+        let mut visited = HashSet::new();
+
         for attrib in &tag.attributes {
             match attrib {
                 Attribute::Regular(attrib) => {
                     if attrib.name.string == "id" {
                         continue;
                     }
+
+                    if visited.contains(&attrib.name.string) {
+                        // TODO: diagnostics
+                        println!(
+                            "Multiple assignments to attribute {}",
+                            attrib.name.string
+                        );
+                        continue;
+                    }
+
+                    visited.insert(attrib.name.string.clone());
 
                     if !self.platform_data.is_valid_attribute(
                         namespace,
@@ -530,9 +546,33 @@ impl<'a> AttributeAnalyzer<'a> {
                 }
 
                 Attribute::Binding(attrib) => {
-                    /* NOTE: exposed_event_suffix is None because platform events are
+                    /* NOTE: exposed_event_suffix is None because platform events can
                      * NOT exposed events. They are semantically source/terminal events
                      */
+
+                    if attrib.bind_from.string == "on" {
+                        if visited.contains(&attrib.bind_to.string) {
+                            // TODO: diagnostics
+                            println!(
+                                "Multiple assignments to attribute {}",
+                                attrib.bind_to.string
+                            );
+                            continue;
+                        }
+
+                        visited.insert(attrib.bind_to.string.clone());
+                    } else {
+                        if visited.contains(&attrib.bind_from.string) {
+                            // TODO: diagnostics
+                            println!(
+                                "Multiple assignments to attribute {}",
+                                attrib.bind_from.string
+                            );
+                            continue;
+                        }
+
+                        visited.insert(attrib.bind_from.string.clone());
+                    }
 
                     self.resolve_binding_attribute(
                         id.as_deref(),
@@ -556,15 +596,43 @@ impl<'a> AttributeAnalyzer<'a> {
         let widget_module =
             &self.registry.get_module(tag.name.string()).unwrap();
 
+        let mut visited = HashSet::new();
+
         for attrib in &tag.attributes {
             match attrib {
-                Attribute::Regular(attrib) => self
-                    .resolve_regular_attribute(&widget_module.metadata, attrib),
+                Attribute::Regular(attrib) => {
+                    if visited.contains(&attrib.name.string) {
+                        // TODO: diagnostics
+                        println!(
+                            "Multiple assignments to attribute {}",
+                            attrib.name.string
+                        );
+                        continue;
+                    }
+
+                    visited.insert(attrib.name.string.clone());
+
+                    self.resolve_regular_attribute(
+                        &widget_module.metadata,
+                        attrib,
+                    );
+                }
 
                 Attribute::Binding(attrib) => {
                     let exposed_event_suffix = if attrib.bind_from.string
                         == "on"
                     {
+                        if visited.contains(&attrib.bind_to.string) {
+                            // TODO: diagnostics
+                            println!(
+                                "Multiple assignments to attribute {}",
+                                attrib.bind_to.string
+                            );
+                            continue;
+                        }
+
+                        visited.insert(attrib.bind_to.string.clone());
+
                         let logical_event_name =
                             &LogicalEventName(attrib.bind_to.string.clone());
                         // obtain the exposed event suffix, if any
@@ -603,6 +671,17 @@ impl<'a> AttributeAnalyzer<'a> {
                     } else {
                         None
                     };
+
+                    if visited.contains(&attrib.bind_from.string) {
+                        // TODO: diagnostics
+                        println!(
+                            "Multiple assignments to attribute {}",
+                            attrib.bind_from.string
+                        );
+                        continue;
+                    }
+
+                    visited.insert(attrib.bind_from.string.clone());
 
                     self.resolve_binding_attribute(
                         id.as_deref(),

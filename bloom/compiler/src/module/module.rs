@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    common::{EMPTY_SPAN, Source, Span},
+    common::{EMPTY_SPAN, Source, Span, SpannedString},
     diagnostic::DiagnosticRenderer,
     module::{
         Expression, ExpressionId, ModuleMetadata, ModuleRegistry, SymbolUse,
@@ -32,6 +32,7 @@ pub struct Module {
     pub root: Option<Fragment>,
     pub r#type: ModuleType,
     pub script: (Span, String),
+    pub style: Option<SpannedString>,
     pub name: String,
     pub metadata: ModuleMetadata,
     pub dependencies: HashMap<String, Span>, // store the span of the first occurance
@@ -49,6 +50,7 @@ impl Default for Module {
             root: None,
             r#type: ModuleType::Widget,
             script: (EMPTY_SPAN, String::new()),
+            style: None,
             metadata: ModuleMetadata::new(),
             name: String::new(),
             dependencies: HashMap::new(),
