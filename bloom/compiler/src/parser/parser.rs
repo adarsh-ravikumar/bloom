@@ -1588,13 +1588,7 @@ impl<'a> Parser<'a> {
                     );
                 }
 
-                let canonical_name =
-                    utils::normalize_case(&fn_name, utils::Case::SnakeCase);
-
-                println!("canonical name for {fn_name} is {canonical_name}");
-
                 metadata.insert(
-                    // canonical_name,
                     fn_name,
                     match directive {
                         COMMAND => ModuleMemberType::Command(None),

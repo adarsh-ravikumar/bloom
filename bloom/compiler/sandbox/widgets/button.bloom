@@ -1,11 +1,11 @@
 <script>
   #event
-  function click (e) {
+  function onButtonClick (e) {
     return e.button;
   }
 </script>
 
-<:button on:click={(e) => click(e)}>
+<:button on:click={(e) => onButtonClick(e)}>
   <slot />
 </:button>
 

@@ -457,6 +457,10 @@ class Platform extends Widget {
     return this;
   }
 
+  get interface() {
+    return this.root;
+  }
+
   on(ename, on) {
     this.root.addEventListener(ename, on);
 
@@ -596,7 +600,7 @@ class Each extends Widget {
     block.context = context;
 
     block.instantiate((root) => {
-      this.factory(context, root);
+      this.factory(this, context, root);
     });
 
     return block;

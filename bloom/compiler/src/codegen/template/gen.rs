@@ -23,6 +23,7 @@ pub struct GenerateTemplateJs<'a> {
     slot: Option<&'a SlotMembers>,
     buffer: String,
     exposed_event_map: &'a HashMap<String, Option<String>>,
+    capture_widget_reference: Option<(String, usize)>,
 }
 
 macro_rules! write_buffer {
@@ -49,6 +50,7 @@ impl<'a> GenerateTemplateJs<'a> {
             expressions,
             buffer: String::new(),
             exposed_event_map,
+            capture_widget_reference: None,
             slot,
         }
     }
@@ -62,7 +64,6 @@ impl<'a> GenerateTemplateJs<'a> {
         let mut res = String::new();
 
         let mut prev_use_end = 0usize;
-        println!("{sites:?}");
 
         for r#use in sites {
             let span_str = &r#use.r#use;
@@ -95,6 +96,7 @@ impl<'a> GenerateTemplateJs<'a> {
                 }
 
                 SymbolUseType::GlobalVariable
+                | SymbolUseType::ModuleReference
                 | SymbolUseType::GlobalFunction => {
                     res.push_str("this.");
 
@@ -302,6 +304,18 @@ impl<'a> GenerateTemplateJs<'a> {
 
                 IrNode::EndTag { id, parent } => {
                     write_buffer!(self, "w{id}.build();\n");
+
+                    if let Some((source_id, id)) =
+                        &self.capture_widget_reference
+                    {
+                        write_buffer!(
+                            self,
+                            "this.{source_id} = w{id}.interface;\n"
+                        );
+
+                        self.capture_widget_reference = None;
+                    }
+
                     if *parent == 0 {
                         write_buffer!(self, "this.appendChild(w{id});\n");
                     } else {
@@ -327,14 +341,21 @@ impl<'a> GenerateTemplateJs<'a> {
                             panic!("template id must be an expression")
                         };
 
+                        let source_id =
+                            &self.expressions[*expr_id].source.string;
+
+                        let logical_id = utils::normalize_case(
+                            &self.expressions[*expr_id].source.string,
+                            utils::Case::SnakeCase,
+                        );
+
                         write_buffer!(
                             self,
-                            "w{id}.templateId = \"{}\";\n",
-                            utils::normalize_case(
-                                &self.expressions[*expr_id].source.string,
-                                utils::Case::SnakeCase,
-                            )
+                            "w{id}.templateId = \"{logical_id}\";\n",
                         );
+
+                        self.capture_widget_reference =
+                            Some((source_id.clone(), *id));
 
                         continue;
                     }
@@ -351,14 +372,11 @@ impl<'a> GenerateTemplateJs<'a> {
                         panic!("Expected expression for event binding")
                     };
 
-                    let event_string =
-                        utils::normalize_case(event, utils::Case::SnakeCase);
-
                     let expr = self.rewrite_expression(*expr_id);
 
                     write_buffer!(
                         self,
-                        "this._cleanup.push(w{id}.events.on(\"{event_string}\", (e) => {{(\n{expr}\n)(e);\n}}));\n"
+                        "$._cleanup.push(w{id}.events.on(\"{event}\", (e) => {{(\n{expr}\n)(e);\n}}));\n"
                     );
                 }
 
@@ -367,17 +385,20 @@ impl<'a> GenerateTemplateJs<'a> {
                     tag_id,
                     id,
                 } => {
-                    let canonical_event_name = format!(
-                        "{}_{source_event}",
+                    let logical_id = utils::normalize_case(
                         &self.expressions[*tag_id].source.string,
+                        utils::Case::SnakeCase,
                     );
 
+                    let logical_event_name =
+                        format!("{logical_id}_{source_event}",);
+
                     let event_name = if let Some(name) =
-                        self.exposed_event_map.get(&canonical_event_name)
+                        self.exposed_event_map.get(&logical_event_name)
                     {
-                        name.as_deref().unwrap_or(&canonical_event_name)
+                        name.as_deref().unwrap_or(&logical_event_name)
                     } else {
-                        &canonical_event_name
+                        &logical_event_name
                     };
 
                     let event_string = utils::normalize_case(
@@ -392,7 +413,7 @@ impl<'a> GenerateTemplateJs<'a> {
 
                     write_buffer!(
                         self,
-                        "this._cleanup.push(w{id}.events.on(\"{event_string}\", (e) => {{this.{fn_name}(e)}}));\n"
+                        "$._cleanup.push(w{id}.events.on(\"{event_string}\", (e) => {{this.{fn_name}(e)}}));\n"
                     );
                 }
 
@@ -501,7 +522,7 @@ impl<'a> GenerateTemplateJs<'a> {
 
                     write_buffer!(
                         self,
-                        "new Derived(() => {expression}), ({context}, w{id}) => {{\n"
+                        "new Derived(() => {expression}), ($, {context}, w{id}) => {{\n"
                     );
                 }
 
@@ -546,10 +567,31 @@ impl<'a> GenerateTemplateJs<'a> {
                         body
                     );
 
+                    let logical_event_name = utils::normalize_case(
+                        &e.source_name,
+                        utils::Case::SnakeCase,
+                    );
+
                     write_buffer!(
                         self,
                         "this.events.emit(\"{}\", value);\nreturn value;\n}}\n",
-                        e.canonical_name
+                        logical_event_name
+                    );
+                }
+
+                ModuleMemberType::Command(f) => {
+                    let f = f.as_ref().unwrap();
+                    let body = self.rewrite_span_in_script(&f.body);
+
+                    write_buffer!(
+                        self,
+                        "{}{}{}\n",
+                        utils::normalize_case(
+                            &f.source_name,
+                            utils::Case::CamelCase
+                        ),
+                        f.params,
+                        body
                     );
                 }
 
@@ -603,6 +645,82 @@ impl<'a> GenerateTemplateJs<'a> {
                 _ => continue,
             }
         }
+    }
+
+    fn generate_interface_getter(&mut self) {
+        write_buffer!(self, "get interface () {{\nreturn {{\n");
+        for (name, member) in self.metadata {
+            match member {
+                ModuleMemberType::ModuleReference { source_id, .. } => {
+                    write_buffer!(
+                        self,
+                        "{}: this.{},\n",
+                        source_id.0,
+                        source_id.0
+                    )
+                }
+
+                ModuleMemberType::Event(e) => {
+                    let e = e.as_ref().unwrap();
+                    write_buffer!(
+                        self,
+                        "{}: (...args) => this.{}(...args),\n",
+                        e.source_name,
+                        e.source_name
+                    )
+                }
+
+                ModuleMemberType::ExposedEvent { prefix, event } => {
+                    let logical_name = format!("{prefix}_{event}");
+
+                    let event_name = utils::normalize_case(
+                        &logical_name,
+                        utils::Case::CamelCase,
+                    );
+
+                    write_buffer!(
+                        self,
+                        "{event_name}: (...args) => this.{event_name}(...args),\n",
+                    )
+                }
+
+                ModuleMemberType::RenamedEvent { to, .. } => {
+                    write_buffer!(self, "{to}: this.{to},\n",)
+                }
+
+                ModuleMemberType::Command(e) => {
+                    let e = e.as_ref().unwrap();
+                    write_buffer!(
+                        self,
+                        "{}: (...args) => this.{}(...args),\n",
+                        e.source_name,
+                        e.source_name
+                    )
+                }
+
+                ModuleMemberType::PublicState(v) => {
+                    write_buffer!(
+                        self,
+                        "{}: this.{},\n",
+                        v.source_name,
+                        v.source_name
+                    )
+                }
+
+                ModuleMemberType::PublicVariable(v) => {
+                    write_buffer!(
+                        self,
+                        "{}: this.{},\n",
+                        v.source_name,
+                        v.source_name
+                    )
+                }
+
+                _ => continue,
+            }
+        }
+
+        write_buffer!(self, "}};\n}}\n");
     }
 
     fn generate_module_variables(&mut self) {
@@ -673,7 +791,12 @@ impl<'a> GenerateTemplateJs<'a> {
                 }
 
                 ModuleMemberType::Event(f) => {
-                    event_list.push(f.as_ref().unwrap().canonical_name.clone())
+                    let logical_event_name = utils::normalize_case(
+                        &f.as_ref().unwrap().source_name,
+                        utils::Case::SnakeCase,
+                    );
+
+                    event_list.push(logical_event_name)
                 }
 
                 ModuleMemberType::RenamedEvent { to, .. } => {
@@ -688,6 +811,10 @@ impl<'a> GenerateTemplateJs<'a> {
                         &format!("{prefix}_{event}"),
                         utils::Case::SnakeCase,
                     ));
+                }
+
+                ModuleMemberType::ModuleReference { source_id, .. } => {
+                    write_buffer!(self, "this.{} = undefined;\n", source_id.0)
                 }
 
                 _ => continue,
@@ -744,10 +871,21 @@ impl<'a> GenerateTemplateJs<'a> {
 
         self.buffer.clear();
 
+        self.generate_interface_getter();
+
+        write!(&mut res, "{}\n", self.buffer)
+            .expect("Write to result buffer failed");
+
+        self.buffer.clear();
+
         self.generate_build();
 
-        write!(&mut res, "build () {{\n{}\n}}\n", self.buffer)
-            .expect("Write to result buffer failed");
+        write!(
+            &mut res,
+            "build () {{\nconst $ = this;\n{}\n}}\n",
+            self.buffer
+        )
+        .expect("Write to result buffer failed");
 
         write!(&mut res, "}}\n").expect("Write to result buffer failed");
 

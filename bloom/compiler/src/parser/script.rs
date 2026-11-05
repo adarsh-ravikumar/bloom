@@ -4,8 +4,8 @@ use crate::{
     analysis::Platform,
     common::{EMPTY_SPAN, Span, SpannedString},
     module::{
-        Expression, Function, Module, ModuleMemberType, SymbolUse,
-        SymbolUseType, Variable,
+        Expression, Function, LogicalEventName, Module, ModuleMemberType,
+        SourceEventName, SymbolUse, SymbolUseType, Variable,
     },
     utils,
 };
@@ -113,7 +113,6 @@ pub enum Symbol {
 
     Parameter {
         source_name: String,
-        canonical_name: String,
         span: OxcSpan,
         optional: bool,
         order: usize,
@@ -122,7 +121,6 @@ pub enum Symbol {
 
     ParameterRest {
         source_name: String,
-        canonical_name: String,
         span: OxcSpan,
     },
 
@@ -245,7 +243,6 @@ where
                         span: Span::from(expr.span),
                         string: self.view_span(expr.span),
                     },
-                    canonical_name: String::default(),
                     context,
                     object_property_shorthand: self
                         .object_property_shorthand_context,
@@ -449,14 +446,9 @@ where
                     // if the body itself doesn't exist, then it doesn't make a
                     // difference if the function's name is tracked
                     if let Some(id) = &expr.id {
-                        let canonical_name = utils::normalize_case(
-                            &id.name,
-                            utils::Case::SnakeCase,
-                        );
-
                         if self.context_tree[context]
                             .symbols
-                            .contains_key(&canonical_name)
+                            .contains_key(id.name.as_str())
                         {
                             // TODO: diagnostics
                             println!("Name collision on function {}", &id.name);
@@ -472,7 +464,6 @@ where
                             id.name.to_string(),
                             Symbol::Function(Function {
                                 source_name: id.name.to_string(),
-                                canonical_name,
                                 context: new_context,
                                 params: self.view_span(expr.params.span()),
                                 body,
@@ -800,7 +791,6 @@ where
                                         span: Span::from(ident.span),
                                         string: self.view_span(ident.span)
                                     },
-                                    canonical_name: String::default(),
                                     context,
                                     object_property_shorthand: self
                                         .object_property_shorthand_context,
@@ -843,7 +833,6 @@ where
                         span: Span::from(target.span),
                         string: self.view_span(target.span),
                     },
-                    canonical_name: String::default(),
                     context,
                     object_property_shorthand: self
                         .object_property_shorthand_context,
@@ -952,7 +941,6 @@ where
                 context,
                 Symbol::Parameter {
                     source_name: String::default(),
-                    canonical_name: String::default(),
                     span: param.span,
                     optional: param.optional,
                     order,
@@ -982,7 +970,6 @@ where
                 Symbol::ParameterRest {
                     span: rest.span,
                     source_name: String::default(),
-                    canonical_name: String::default(),
                 },
                 &rest.rest.argument,
                 uses,
@@ -1050,38 +1037,17 @@ where
                  * - name: Ident<'a>
                  */
 
-                let canonical_name =
-                    utils::normalize_case(&ident.name, utils::Case::SnakeCase);
-
-                // if self.context_tree[context]
-                //     .symbols
-                //     .contains_key(&canonical_name)
-                // {
-                //     // TODO: diagnostics
-                //     println!("Name collision for identifier {}", &ident.name);
-                // } else {
                 match &mut symbol {
                     Symbol::Variable(v) => {
                         v.source_name = ident.name.to_string();
-                        v.canonical_name = canonical_name.clone();
                     }
 
-                    Symbol::Parameter {
-                        source_name,
-                        canonical_name,
-                        ..
-                    } => {
+                    Symbol::Parameter { source_name, .. } => {
                         *source_name = ident.name.to_string();
-                        *canonical_name = canonical_name.clone();
                     }
 
-                    Symbol::ParameterRest {
-                        source_name,
-                        canonical_name,
-                        ..
-                    } => {
+                    Symbol::ParameterRest { source_name, .. } => {
                         *source_name = ident.name.to_string();
-                        *canonical_name = canonical_name.clone();
                     }
 
                     _ => unreachable!(),
@@ -1445,7 +1411,6 @@ where
                             new_context,
                             Symbol::Parameter {
                                 source_name: String::default(),
-                                canonical_name: String::default(),
                                 span: param.span,
                                 type_annotation: None,
                                 optional: false,
@@ -1530,12 +1495,9 @@ where
                 };
 
                 if let Some(id) = &stmt.id {
-                    let canonical_name =
-                        utils::normalize_case(&id.name, utils::Case::SnakeCase);
-
                     if self.context_tree[context]
                         .symbols
-                        .contains_key(&canonical_name)
+                        .contains_key(id.name.as_str())
                     {
                         // TODO: diagnostics
                         println!(
@@ -1549,7 +1511,6 @@ where
                         id.name.to_string(),
                         Symbol::Function(Function {
                             source_name: id.name.to_string(),
-                            canonical_name,
                             context: new_context,
                             params: self.view_span(stmt.params.span()),
                             body: if let Some(b) = body {
@@ -1810,7 +1771,6 @@ where
                 context,
                 Symbol::Variable(Variable {
                     source_name: String::default(),
-                    canonical_name: String::default(),
                     span: Span::from(decl.span),
                     type_annotation: r#type,
                     is_state: false,
@@ -2269,6 +2229,32 @@ where
                     {
                         match f {
                             ModuleMemberType::Event(e) => {
+                                let logical_name =
+                                    LogicalEventName(utils::normalize_case(
+                                        &func.source_name,
+                                        utils::Case::SnakeCase,
+                                    ));
+
+                                if let Some(existing) = module
+                                    .logical_to_source_event
+                                    .get(&logical_name)
+                                {
+                                    // TODO: diagnostics
+                                    println!(
+                                        "Cannot have event with name `{}`, as the logical name `{:?}` collides with the event `{:?}` which happens to produce the same logical name.",
+                                        func.source_name,
+                                        logical_name,
+                                        existing
+                                    );
+                                } else {
+                                    module.logical_to_source_event.insert(
+                                        logical_name,
+                                        SourceEventName(
+                                            func.source_name.clone(),
+                                        ),
+                                    );
+                                }
+
                                 *e = Some(func.clone())
                             }
                             ModuleMemberType::Command(e) => {
@@ -2284,7 +2270,6 @@ where
                         }
                     } else {
                         module.metadata.insert(
-                            // func.canonical_name.clone(),
                             func.source_name.clone(),
                             ModuleMemberType::Function(func.clone()),
                         );
@@ -2368,14 +2353,9 @@ where
             for _use in &mut expr.symbol_uses {
                 let use_name = &_use.r#use.string;
 
-                let canonical_use_name =
-                    utils::normalize_case(use_name, utils::Case::SnakeCase);
-
                 if expr.context_vars.contains(&use_name) {
                     _use.r#type = SymbolUseType::TemplateContext;
                 } else {
-                    // let use_type = self
-                    //     .classify_symbol_use(&canonical_use_name, _use.context);
                     let use_type =
                         self.classify_symbol_use(&use_name, _use.context);
 
@@ -2405,8 +2385,6 @@ where
 
                         _ => _use.r#type = use_type,
                     }
-
-                    _use.canonical_name = canonical_use_name;
                 }
             }
         }

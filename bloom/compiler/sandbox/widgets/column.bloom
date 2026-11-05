@@ -1,3 +1,7 @@
 <:div class="column" style="display: flex; flex-direction: column; gap: 1rem;">
   <slot />
+
+  <button id={longButtonIdName} on:on_button_click>
+    Say Nyet!
+  </button>
 </:div>

@@ -27,7 +27,7 @@
     <text> In Progress </text>
   {/if}
 
-  <column>
+  <column id={anotherLayer} on:long_button_id_name_on_button_click>
     {#if isEditing}
       <input value:value={name} />
     {:else}
@@ -43,7 +43,7 @@
     {status}
   </column>
 
-  <button on:click={edit}>
+  <button on:on_button_click={edit}>
     {#if isEditing}
       Save
     {:else}
@@ -51,11 +51,15 @@
     {/if}
   </button>
 
-  <button on:click={() => deleteItem(taskId)}>
+  <button on:on_button_click={() => deleteItem(taskId)}>
     Delete
   </button>
 
-  <button on:click={() => markDone(taskId)}>
+  <button on:on_button_click={() => markDone(taskId)}>
     Mark Done
+  </button>
+
+  <button id={longButtonIdName} on:on_button_click>
+    Say Hyalo!
   </button>
 </row>

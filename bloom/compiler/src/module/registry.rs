@@ -3,8 +3,12 @@ use std::{
     hash::Hash,
 };
 
-use crate::module::{
-    self, Module, ModuleMemberType, ModuleMetadata, ModuleType,
+use crate::{
+    common::Source,
+    module::{
+        self, LogicalEventName, LogicalId, Module, ModuleMemberType,
+        ModuleMetadata, ModuleType, SourceEventName, SourceId,
+    },
 };
 
 #[derive(Debug)]
@@ -120,8 +124,11 @@ impl<'a> ModuleRegistry {
         dependency_list.push(module_index);
     }
 
-    pub fn apply_delta(&mut self, delta: HashMap<String, ModuleMetadata>) {
-        for (module, delta) in delta {
+    pub fn apply_delta(
+        &mut self,
+        interface_delta: HashMap<String, ModuleMetadata>,
+    ) {
+        for (module, delta) in interface_delta {
             let module = &mut self.modules[*self.lookup.get(&module).unwrap()];
 
             for (name, member) in delta {

@@ -457,6 +457,10 @@ class Platform extends Widget {
     return this;
   }
 
+  get interface() {
+    return this.root;
+  }
+
   on(ename, on) {
     this.root.addEventListener(ename, on);
 
@@ -596,7 +600,7 @@ class Each extends Widget {
     block.context = context;
 
     block.instantiate((root) => {
-      this.factory(context, root);
+      this.factory(this, context, root);
     });
 
     return block;
@@ -711,42 +715,6 @@ function bootstrap() {
 
   document.querySelector("#app").appendChild(b.root);
 }
-class Text extends Widget {
-constructor() {
-super();
-this.root.classList.add("b-text");
-this.events = new EventMap([]);
-this.slot = new Slot();
-
-}
-
-build () {
-const w1 = new Platform("p");
-w1.appendChild(this.slot);
-w1.build();
-this.appendChild(w1);
-
-}
-}
-class Column extends Widget {
-constructor() {
-super();
-this.root.classList.add("b-column");
-this.events = new EventMap([]);
-this.slot = new Slot();
-
-}
-
-build () {
-const w1 = new Platform("div");
-w1.setAttribute("class", new Derived(() => `column`));
-w1.setAttribute("style", new Derived(() => `display: flex; flex-direction: column; gap: 1rem;`));
-w1.appendChild(this.slot);
-w1.build();
-this.appendChild(w1);
-
-}
-}
 class Row extends Widget {
 constructor() {
 super();
@@ -756,7 +724,13 @@ this.slot = new Slot();
 
 }
 
+get interface () {
+return {
+};
+}
+
 build () {
+const $ = this;
 const w1 = new Platform("div");
 w1.setAttribute("class", new Derived(() => `row`));
 w1.setAttribute("style", new Derived(() => `display: flex; gap: 1rem;`));
@@ -770,26 +744,74 @@ class Button extends Widget {
 constructor() {
 super();
 this.root.classList.add("b-button");
-this.events = new EventMap(["click", ]);
+this.events = new EventMap(["on_button_click", ]);
 this.slot = new Slot();
 
 }
-click(...params) {
+onButtonClick(...params) {
 const value = ((e) => {
     return e.button;
   }
 )(...params);
-this.events.emit("click", value);
+this.events.emit("on_button_click", value);
 return value;
 }
 
+get interface () {
+return {
+onButtonClick: (...args) => this.onButtonClick(...args),
+};
+}
+
 build () {
+const $ = this;
 const w1 = new Platform("button");
-this._cleanup.push(w1.events.on("click", (e) => {(
-(e) => this.click(e)
+$._cleanup.push(w1.events.on("click", (e) => {(
+(e) => this.onButtonClick(e)
 )(e);
 }));
 w1.appendChild(this.slot);
+w1.build();
+this.appendChild(w1);
+
+}
+}
+class Column extends Widget {
+constructor() {
+super();
+this.root.classList.add("b-column");
+this.longButtonIdName = undefined;
+this.events = new EventMap(["long_button_id_name_on_button_click", ]);
+this.slot = new Slot();
+
+}
+longButtonIdNameOnButtonClick(e) {
+this.events.emit("long_button_id_name_on_button_click", e);
+return e;
+}
+
+get interface () {
+return {
+longButtonIdName: this.longButtonIdName,
+longButtonIdNameOnButtonClick: (...args) => this.longButtonIdNameOnButtonClick(...args),
+};
+}
+
+build () {
+const $ = this;
+const w1 = new Platform("div");
+w1.setAttribute("class", new Derived(() => `column`));
+w1.setAttribute("style", new Derived(() => `display: flex; flex-direction: column; gap: 1rem;`));
+w1.appendChild(this.slot);
+const w5 = new Button();
+w5.templateId = "long_button_id_name";
+$._cleanup.push(w5.events.on("on_button_click", (e) => {this.longButtonIdNameOnButtonClick(e)}));
+const w6 = w5.slot;
+const w7 = new Parts([`\n    Say Nyet!\n  `,]);
+w6.appendChild(w7);
+w5.build();
+this.longButtonIdName = w5.interface;
+w1.appendChild(w5);
 w1.build();
 this.appendChild(w1);
 
@@ -800,6 +822,7 @@ constructor() {
 super();
 this.root.classList.add("b-input");
 this.value = new State("");
+this.inputField = undefined;
 this.events = new EventMap(["change", ]);
 
 }
@@ -811,15 +834,56 @@ const value = ((event) => {
 this.events.emit("change", value);
 return value;
 }
+clear(){
+    console.log("Clear command invoked!");
+    this.value.value = "";
+    console.log(this.inputField);
+    this.inputField.value = "";
+  }
+
+get interface () {
+return {
+change: (...args) => this.change(...args),
+clear: (...args) => this.clear(...args),
+value: this.value,
+inputField: this.inputField,
+};
+}
 
 build () {
+const $ = this;
 const w1 = new Platform("input");
-this._cleanup.push(w1.events.on("change", (e) => {(
+w1.templateId = "input_field";
+$._cleanup.push(w1.events.on("change", (e) => {(
 this.change
 )(e);
 }));
 w1.setAttribute("type", new Derived(() => `text`));
 w1.setAttribute("value", new Derived(() => this.value.value));
+w1.build();
+this.inputField = w1.interface;
+this.appendChild(w1);
+
+}
+}
+class Text extends Widget {
+constructor() {
+super();
+this.root.classList.add("b-text");
+this.events = new EventMap([]);
+this.slot = new Slot();
+
+}
+
+get interface () {
+return {
+};
+}
+
+build () {
+const $ = this;
+const w1 = new Platform("p");
+w1.appendChild(this.slot);
 w1.build();
 this.appendChild(w1);
 
@@ -829,15 +893,17 @@ class Task extends Widget {
 constructor() {
 super();
 this.root.classList.add("b-task");
-this.deleteItem = new State(undefined);
 this.name = new State(undefined);
-this.taskId = new State(undefined);
 this.markDone = new State(undefined);
-this.isEditing = new State(false);
 this.status = new State(undefined);
+this.value = new State(undefined);
+this.deleteItem = new State(undefined);
 this.editName = new State(undefined);
-this.value = new State("");
-this.events = new EventMap([]);
+this.isEditing = new State(false);
+this.taskId = new State(undefined);
+this.anotherLayer = undefined;
+this.longButtonIdName = undefined;
+this.events = new EventMap(["another_layer_on_button_click", "long_button_id_name_on_button_click", ]);
 
 }
 edit(){
@@ -849,8 +915,32 @@ edit(){
 
     this.isEditing.value = true;
   }
+anotherLayerOnButtonClick(e) {
+this.events.emit("another_layer_on_button_click", e);
+return e;
+}
+longButtonIdNameOnButtonClick(e) {
+this.events.emit("long_button_id_name_on_button_click", e);
+return e;
+}
+
+get interface () {
+return {
+name: this.name,
+markDone: this.markDone,
+status: this.status,
+deleteItem: this.deleteItem,
+editName: this.editName,
+taskId: this.taskId,
+anotherLayer: this.anotherLayer,
+longButtonIdName: this.longButtonIdName,
+anotherLayerOnButtonClick: (...args) => this.anotherLayerOnButtonClick(...args),
+longButtonIdNameOnButtonClick: (...args) => this.longButtonIdNameOnButtonClick(...args),
+};
+}
 
 build () {
+const $ = this;
 const w1 = new Row();
 const w2 = w1.slot;
 const condition3 = new Conditional();
@@ -873,6 +963,8 @@ w7.appendChild(w8);
 w2.appendChild(condition3);
 condition3.update();
 const w11 = new Column();
+w11.templateId = "another_layer";
+$._cleanup.push(w11.events.on("long_button_id_name_on_button_click", (e) => {this.anotherLayerOnButtonClick(e)}));
 const w12 = w11.slot;
 const condition13 = new Conditional();
 condition13.case(new Derived(() => this.isEditing.value), (w13) => {
@@ -880,6 +972,7 @@ const w14 = new Input();
 this.value = w14.value;
 w14.value.value = new Derived(() => this.name.value);
 w14.build();
+this.anotherLayer = w11.interface;
 w13.appendChild(w14);
 });
 condition13.default((w15) => {
@@ -915,7 +1008,7 @@ w12.appendChild(w26);
 w11.build();
 w2.appendChild(w11);
 const w27 = new Button();
-this._cleanup.push(w27.events.on("click", (e) => {(
+$._cleanup.push(w27.events.on("on_button_click", (e) => {(
 this.edit
 )(e);
 }));
@@ -934,7 +1027,7 @@ condition29.update();
 w27.build();
 w2.appendChild(w27);
 const w33 = new Button();
-this._cleanup.push(w33.events.on("click", (e) => {(
+$._cleanup.push(w33.events.on("on_button_click", (e) => {(
 () => this.deleteItem.value(this.taskId.value)
 )(e);
 }));
@@ -944,7 +1037,7 @@ w34.appendChild(w35);
 w33.build();
 w2.appendChild(w33);
 const w36 = new Button();
-this._cleanup.push(w36.events.on("click", (e) => {(
+$._cleanup.push(w36.events.on("on_button_click", (e) => {(
 () => this.markDone.value(this.taskId.value)
 )(e);
 }));
@@ -953,6 +1046,15 @@ const w38 = new Parts([`\n    Mark Done\n  `,]);
 w37.appendChild(w38);
 w36.build();
 w2.appendChild(w36);
+const w39 = new Button();
+w39.templateId = "long_button_id_name";
+$._cleanup.push(w39.events.on("on_button_click", (e) => {this.longButtonIdNameOnButtonClick(e)}));
+const w40 = w39.slot;
+const w41 = new Parts([`\n    Say Hyalo!\n  `,]);
+w40.appendChild(w41);
+w39.build();
+this.longButtonIdName = w39.interface;
+w2.appendChild(w39);
 w1.build();
 this.appendChild(w1);
 
@@ -962,7 +1064,8 @@ class Todo extends Widget {
 constructor() {
 super();
 this.root.classList.add("b-todo");
-this.task = new State(undefined);
+this.taskInput = undefined;
+this.task = undefined;
 this.items = new State([]);
 this.events = new EventMap([]);
 
@@ -970,16 +1073,8 @@ this.events = new EventMap([]);
 addItem(){
     let id = this.uuid4();
     this.items.value.push({id: id, task: this.task.value, status: undefined});
-  }
-markDone(id){
-    let toMark = this.findItem(id);
-    this.items.value[toMark].status = "done";
-  }
-uuid4(){
-    return Array.from(
-        { length: 4 },
-        () => Math.floor(Math.random() * 16).toString(16)
-    ).join(""); 
+
+    this.taskInput.clear();
   }
 deleteItem(id){
       let toDel = this.findItem(id);
@@ -988,6 +1083,16 @@ deleteItem(id){
 editItem(id, name){
       let toEdit= this.findItem(id);
       this.items.value[toEdit].task = name;
+  }
+uuid4(){
+    return Array.from(
+        { length: 4 },
+        () => Math.floor(Math.random() * 16).toString(16)
+    ).join(""); 
+  }
+markDone(id){
+    let toMark = this.findItem(id);
+    this.items.value[toMark].status = "done";
   }
 findItem(id){
       let idx = -1;
@@ -1003,7 +1108,14 @@ findItem(id){
       return idx;
   }
 
+get interface () {
+return {
+taskInput: this.taskInput,
+};
+}
+
 build () {
+const $ = this;
 const w1 = new Platform("h1");
 const w2 = new Parts([`Todo`,]);
 w1.appendChild(w2);
@@ -1012,11 +1124,13 @@ this.appendChild(w1);
 const w3 = new Row();
 const w4 = w3.slot;
 const w5 = new Input();
+w5.templateId = "task_input";
 this.task = w5.value;
 w5.build();
+this.taskInput = w5.interface;
 w4.appendChild(w5);
 const w6 = new Button();
-this._cleanup.push(w6.events.on("click", (e) => {(
+$._cleanup.push(w6.events.on("on_button_click", (e) => {(
 this.addItem
 )(e);
 }));
@@ -1033,8 +1147,12 @@ w9.appendChild(w10);
 w9.build();
 this.appendChild(w9);
 const w11 = new Column();
+$._cleanup.push(w11.events.on("long_button_id_name_on_button_click", (e) => {(
+() => alert("nyet says parent!")
+)(e);
+}));
 const w12 = w11.slot;
-const each13 = new Each((task) => task.value.id, new Derived(() => this.items.value), (task, w13) => {
+const each13 = new Each((task) => task.value.id, new Derived(() => this.items.value), ($, task, w13) => {
 const w14 = new Task();
 w14.setAttribute("name", new Derived(() => task.value.task));
 w14.setAttribute("taskId", new Derived(() => task.value.id));
@@ -1042,6 +1160,14 @@ w14.setAttribute("status", new Derived(() => task.value.status));
 w14.setAttribute("deleteItem", new Derived(() => (id) => this.deleteItem(id)));
 w14.setAttribute("markDone", new Derived(() => (id) => this.markDone(id)));
 w14.setAttribute("editName", new Derived(() => (id, name) => this.editItem(id, name)));
+$._cleanup.push(w14.events.on("long_button_id_name_on_button_click", (e) => {(
+() => alert(`hyalo says task "${task.value.task}" with id "${task.value.id}"`)
+)(e);
+}));
+$._cleanup.push(w14.events.on("another_layer_on_button_click", (e) => {(
+() => alert(`nyet says task "${task.value.task}" with id "${task.value.id}"`)
+)(e);
+}));
 w14.build();
 w13.appendChild(w14);
 });

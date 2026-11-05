@@ -7,11 +7,12 @@
   }
 
   let items = [];
-  let task: string;
 
   function addItem() {
     let id = uuid4();
     items.push({id, task, status: undefined});
+
+    taskInput.clear();
   }
 
   function findItem(id) {
@@ -46,12 +47,12 @@
 
 <:h1>Todo</:h1>
 <row>
-  <input value:task />
-  <button on:click={addItem}>Add Item</button>
+  <input id={taskInput} value:task />
+  <button on:on_button_click={addItem}>Add Item</button>
 </row>
 
 <:h2>Tasks</:h2>
-<column>
+<column on:long_button_id_name_on_button_click={() => alert("nyet says parent!")}>
   {#each task {task.id} in items}
     <task 
       name={task.task}
@@ -60,6 +61,8 @@
       deleteItem={(id) => deleteItem(id)}
       markDone={(id) => markDone(id)}
       editName={(id, name) => editItem(id, name)}
+      on:long_button_id_name_on_button_click={() => alert(`hyalo says task "${task.task}" with id "${task.id}"`)}
+      on:another_layer_on_button_click={() => alert(`nyet says task "${task.task}" with id "${task.id}"`)}
     />
   {/each}
 </column>

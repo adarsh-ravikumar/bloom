@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     common::{Span, SpannedString},
+    module::{LogicalId, SourceId},
     parser::{Alias, Enum, Interface, TypeAnnotation},
 };
 
@@ -12,6 +13,7 @@ pub enum SymbolUseType {
     GlobalFunction,
     TemplateContext,
     GlobalUnresolved,
+    ModuleReference,
     Local,
     Unknown,
 }
@@ -25,7 +27,6 @@ pub enum SlotMembers {
 #[derive(Debug, Clone)]
 pub struct SymbolUse {
     pub r#use: SpannedString,
-    pub canonical_name: String,
     pub r#type: SymbolUseType,
     pub context: usize,
     pub object_property_shorthand: bool,
@@ -55,7 +56,6 @@ impl Expression {
 #[derive(Debug, Clone)]
 pub struct Variable {
     pub source_name: String,
-    pub canonical_name: String,
     pub span: Span,
     pub type_annotation: Option<TypeAnnotation>,
     pub is_let: bool,
@@ -67,7 +67,6 @@ pub struct Variable {
 #[derive(Debug, Clone)]
 pub struct Function {
     pub source_name: String,
-    pub canonical_name: String,
     pub context: usize,
     pub body: SpannedString,
     pub params: String,
@@ -86,9 +85,18 @@ pub enum ModuleMemberType {
     Command(Option<Function>),
     Reactive(Option<Function>),
 
-    RenamedEvent { from: String, to: String },
-    StateProxy { from: String, to: String },
-    ExposedEvent { prefix: String, event: String },
+    RenamedEvent {
+        from: String,
+        to: String,
+    },
+    StateProxy {
+        from: String,
+        to: String,
+    },
+    ExposedEvent {
+        prefix: String,
+        event: String,
+    },
 
     Function(Function),
 
@@ -100,6 +108,11 @@ pub enum ModuleMemberType {
     Enum(Enum),
     Alias(Alias),
     Interface(Interface),
+
+    ModuleReference {
+        source_id: SourceId,
+        logical_id: LogicalId,
+    },
 }
 
 pub type ModuleMetadata = HashMap<String, ModuleMemberType>;

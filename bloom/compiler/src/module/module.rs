@@ -15,6 +15,18 @@ pub enum ModuleType {
     Panel,
 }
 
+#[derive(Debug, Eq, Hash, PartialEq, Clone)]
+pub struct LogicalEventName(pub String);
+
+#[derive(Debug, Eq, Hash, PartialEq, Clone)]
+pub struct SourceEventName(pub String);
+
+#[derive(Debug, Eq, Hash, PartialEq, Clone)]
+pub struct LogicalId(pub String);
+
+#[derive(Debug, Eq, Hash, PartialEq, Clone)]
+pub struct SourceId(pub String);
+
 #[derive(Debug)]
 pub struct Module {
     pub root: Option<Fragment>,
@@ -27,6 +39,8 @@ pub struct Module {
     pub expressions: Vec<Expression>,
     pub has_slots: bool,
     pub named_slots: HashMap<String, Span>,
+    pub logical_to_source_event: HashMap<LogicalEventName, SourceEventName>,
+    pub logical_to_source_id: HashMap<LogicalId, SourceId>,
 }
 
 impl Default for Module {
@@ -42,6 +56,8 @@ impl Default for Module {
             expressions: Vec::new(),
             has_slots: false,
             named_slots: HashMap::new(),
+            logical_to_source_event: HashMap::new(),
+            logical_to_source_id: HashMap::new(),
         }
     }
 }

@@ -104,6 +104,7 @@ fn main() {
                 name: &module.name,
                 metadata: &module.metadata,
                 expressions: &module.expressions,
+                logical_to_source_map: &module.logical_to_source_event,
             };
 
             attribute_analyzer.visit_module(&module.root, &context);
@@ -128,6 +129,8 @@ fn main() {
             let module = &mut registry.modules[*module];
             println!("\n Expression analysis on module: {}", module.name);
             expression_analyzer.analyze(&module.name, &mut module.expressions);
+            expression_analyzer
+                .analyze_symbol_uses(&module.name, &mut module.symbol_uses);
         }
 
         registry.apply_delta(interface_delta);

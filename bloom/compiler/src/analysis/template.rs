@@ -1,25 +1,27 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, hash::Hash};
 
 use crate::{
     analysis::{Platform, PlatformNamespace},
     common::{EMPTY_SPAN, Span},
     module::{
-        Expression, ModuleMemberType, ModuleMetadata, ModuleRegistry,
-        SlotMembers,
+        Expression, LogicalEventName, LogicalId, ModuleMemberType,
+        ModuleMetadata, ModuleRegistry, SlotMembers, SourceEventName, SourceId,
     },
     parser::{
         Attribute, AttributeValue, BindingAttribute, Fragment, FragmentNode,
         RegularAttribute, Tag, TagNamespace,
     },
-    utils,
+    utils::{self, normalize_case},
 };
 
 pub struct AttributeAnalyzer<'a> {
     registry: &'a ModuleRegistry,
     pub interface_delta: HashMap<String, ModuleMetadata>,
+    pub logical_to_source_delta:
+        HashMap<String, HashMap<LogicalEventName, SourceEventName>>,
     pub exposed_event_map: HashMap<String, Option<String>>,
     pub slots: HashMap<String, SlotMembers>,
-    id_set: HashMap<String, Span>,
+    pub id_table: HashMap<String, HashMap<LogicalId, SourceId>>,
     platform_data: Platform,
 }
 
@@ -27,6 +29,7 @@ pub struct ModuleContext<'a> {
     pub name: &'a str,
     pub metadata: &'a ModuleMetadata,
     pub expressions: &'a [Expression],
+    pub logical_to_source_map: &'a HashMap<LogicalEventName, SourceEventName>,
 }
 
 impl<'a> AttributeAnalyzer<'a> {
@@ -35,9 +38,10 @@ impl<'a> AttributeAnalyzer<'a> {
             registry,
             interface_delta: HashMap::new(),
             exposed_event_map: HashMap::new(),
-            id_set: HashMap::new(),
+            id_table: HashMap::new(),
             slots: HashMap::new(),
             platform_data: Platform::init(),
+            logical_to_source_delta: HashMap::new(),
         }
     }
 
@@ -108,11 +112,39 @@ impl<'a> AttributeAnalyzer<'a> {
     fn resolve_event_attribute(
         &mut self,
         id: Option<&str>,
+        tag: &Tag,
         current_module: &ModuleContext,
-        canonical_name: &str,
         attrib: &BindingAttribute,
-        exposed_event_suffix: Option<String>,
+        exposed_event_suffix: Option<LogicalEventName>,
     ) {
+        let logical_event_name =
+            &LogicalEventName(attrib.bind_to.string.clone());
+
+        let bind_target = if let Some(target) = self
+            .registry
+            .get_module(tag.name.string())
+            .unwrap()
+            .logical_to_source_event
+            .get(&logical_event_name)
+        {
+            target
+        } else if let Some(target) = self
+            .logical_to_source_delta
+            .get(tag.name.string())
+            .unwrap()
+            .get(&logical_event_name)
+        {
+            target
+        } else {
+            // TODO: diagnostics
+            println!(
+                "No event `{}` on tag`{}`",
+                attrib.bind_to.string,
+                tag.name.string()
+            );
+            return;
+        };
+
         // new events are introduced only on exposition or renaming.
         match &attrib.value {
             Some(value) => {
@@ -121,11 +153,6 @@ impl<'a> AttributeAnalyzer<'a> {
                     let expr = &current_module.expressions[*e];
                     if expr.is_lone_identifier {
                         // check if this member exists in the current module
-                        //
-                        // let event_name = utils::normalize_case(
-                        //     expr.source.string.trim(),
-                        //     utils::Case::SnakeCase,
-                        // );
                         let event_name = expr.source.string.trim();
 
                         if current_module.metadata.get(event_name).is_some() {
@@ -138,7 +165,7 @@ impl<'a> AttributeAnalyzer<'a> {
                             // rename case
                             println!(
                                 "renaming event `{}` to `{}`. this introduces `{}` into current scope",
-                                canonical_name, event_name, event_name
+                                attrib.bind_to.string, event_name, event_name
                             );
 
                             if let Some(member) =
@@ -159,6 +186,20 @@ impl<'a> AttributeAnalyzer<'a> {
                                         from: attrib.bind_to.string.clone(),
                                         to: event_name.to_string(),
                                     },
+                                );
+
+                            let logical_name =
+                                LogicalEventName(utils::normalize_case(
+                                    event_name,
+                                    utils::Case::SnakeCase,
+                                ));
+
+                            self.logical_to_source_delta
+                                .get_mut(current_module.name)
+                                .unwrap()
+                                .insert(
+                                    logical_name,
+                                    SourceEventName(event_name.to_string()),
                                 );
                         }
                     }
@@ -185,18 +226,20 @@ impl<'a> AttributeAnalyzer<'a> {
                  * populate a map from <id>_<canonical name> to the final event name.
                  */
 
-                let canonical_event_name = format!("{id}_{canonical_name}");
+                let canonical_event_name =
+                    format!("{id}_{}", attrib.bind_to.string);
 
                 let event_name = if let Some(event) = exposed_event_suffix {
-                    suffix = event.to_string();
-                    let name = format!("{id}_{event}");
+                    suffix = event.0.clone();
+
+                    let name = format!("{id}_{}", event.0);
 
                     self.exposed_event_map
                         .insert(canonical_event_name, Some(name.clone()));
 
                     name
                 } else {
-                    suffix = canonical_name.to_string();
+                    suffix = attrib.bind_to.string.clone();
 
                     self.exposed_event_map
                         .insert(canonical_event_name.clone(), None);
@@ -205,7 +248,8 @@ impl<'a> AttributeAnalyzer<'a> {
                 };
 
                 println!(
-                    "exposing event `{canonical_name}`. this introduces `{event_name}` into the current scope",
+                    "exposing event `{}`. this introduces `{event_name}` into the current scope",
+                    attrib.bind_to.string.clone()
                 );
 
                 if let Some(member) =
@@ -228,6 +272,14 @@ impl<'a> AttributeAnalyzer<'a> {
                             event: suffix,
                         },
                     );
+
+                self.logical_to_source_delta
+                    .get_mut(current_module.name)
+                    .unwrap()
+                    .insert(
+                        LogicalEventName(event_name.clone()),
+                        SourceEventName(event_name.clone()),
+                    );
             }
         }
     }
@@ -237,16 +289,15 @@ impl<'a> AttributeAnalyzer<'a> {
         id: Option<&str>,
         tag: &Tag,
         current_module: &ModuleContext,
-        canonical_name: &str,
         attrib: &BindingAttribute,
-        exposed_event_suffix: Option<String>,
+        exposed_event_suffix: Option<LogicalEventName>,
     ) {
         // event
         if attrib.bind_from.string == "on" {
             self.resolve_event_attribute(
                 id,
+                tag,
                 current_module,
-                canonical_name,
                 attrib,
                 exposed_event_suffix,
             );
@@ -357,7 +408,7 @@ impl<'a> AttributeAnalyzer<'a> {
             .get_mut(current_module.name)
             .unwrap()
             .insert(
-                canonical_name.to_string(),
+                attrib.bind_to.string.clone(),
                 ModuleMemberType::StateProxy {
                     from: attrib.bind_from.string.clone(),
                     to: attrib.bind_to.string.clone(),
@@ -369,6 +420,7 @@ impl<'a> AttributeAnalyzer<'a> {
 
     fn collect_id(
         &mut self,
+        module_name: &str,
         expressions: &[Expression],
         attributes: &[Attribute],
     ) -> Option<String> {
@@ -386,20 +438,51 @@ impl<'a> AttributeAnalyzer<'a> {
                         // TODO: diagnostics
                         println!("ID must be the first attribute");
                     } else {
-                        let id_str = utils::normalize_case(
-                            expr.source.string.trim(),
-                            utils::Case::SnakeCase,
-                        );
+                        let source_id = expr.source.string.trim();
 
-                        if let Some(site) = self.id_set.get(&id_str) {
+                        let id_str = LogicalId(utils::normalize_case(
+                            source_id,
+                            utils::Case::SnakeCase,
+                        ));
+
+                        let id_table =
+                            self.id_table.get_mut(module_name).unwrap();
+
+                        if let Some(site) = id_table.get(&id_str) {
+                            // TODO: diagnostics
                             println!(
-                                // TODO: diagnostics
-                                "`{id_str}` already used at {site:?}. ID must be unique"
+                                "`{id_str:?}` already used at {site:?}. ID must be unique"
+                            );
+                        } else if let Some(existing) = self
+                            .registry
+                            .get_module(&module_name.to_string())
+                            .unwrap()
+                            .metadata
+                            .get(&id_str.0)
+                        {
+                            // TODO: diagnostics
+                            println!(
+                                "There already exists a module member `{existing:?}` with the same symbol as this id. ID's introduce a refernce of the same name into the module's scope."
                             );
                         }
 
-                        self.id_set.insert(id_str.clone(), expr.source.span);
-                        return Some(id_str);
+                        id_table.insert(
+                            id_str.clone(),
+                            SourceId(source_id.to_string()),
+                        );
+
+                        self.interface_delta
+                            .get_mut(module_name)
+                            .unwrap()
+                            .insert(
+                                source_id.to_string(),
+                                ModuleMemberType::ModuleReference {
+                                    source_id: SourceId(source_id.to_string()),
+                                    logical_id: id_str.clone(),
+                                },
+                            );
+
+                        return Some(id_str.0);
                     }
                 } else {
                     // TODO: diagnostics
@@ -447,11 +530,6 @@ impl<'a> AttributeAnalyzer<'a> {
                 }
 
                 Attribute::Binding(attrib) => {
-                    let canonical_name = utils::normalize_case(
-                        &attrib.bind_to.string,
-                        utils::Case::SnakeCase,
-                    );
-
                     /* NOTE: exposed_event_suffix is None because platform events are
                      * NOT exposed events. They are semantically source/terminal events
                      */
@@ -460,7 +538,6 @@ impl<'a> AttributeAnalyzer<'a> {
                         id.as_deref(),
                         tag,
                         current_module,
-                        &canonical_name,
                         attrib,
                         None,
                     );
@@ -476,37 +553,37 @@ impl<'a> AttributeAnalyzer<'a> {
         tag: &Tag,
     ) {
         // module is guaranteed to exist at this point.
-        let widget_module_metadata = &self
-            .registry
-            .get_module(tag.name.string())
-            .unwrap()
-            .metadata;
+        let widget_module =
+            &self.registry.get_module(tag.name.string()).unwrap();
 
         for attrib in &tag.attributes {
             match attrib {
                 Attribute::Regular(attrib) => self
-                    .resolve_regular_attribute(&widget_module_metadata, attrib),
+                    .resolve_regular_attribute(&widget_module.metadata, attrib),
 
                 Attribute::Binding(attrib) => {
-                    let canonical_name = utils::normalize_case(
-                        &attrib.bind_to.string,
-                        utils::Case::SnakeCase,
-                    );
                     let exposed_event_suffix = if attrib.bind_from.string
                         == "on"
                     {
+                        let logical_event_name =
+                            &LogicalEventName(attrib.bind_to.string.clone());
                         // obtain the exposed event suffix, if any
-                        let event = if let Some(event) =
-                            widget_module_metadata.get(&canonical_name)
+                        let event = if let Some(event) = widget_module
+                            .logical_to_source_event
+                            .get(&logical_event_name)
                         {
-                            event
+                            widget_module.metadata.get(&event.0).unwrap()
                         } else if let Some(event) = self
-                            .interface_delta
+                            .logical_to_source_delta
                             .get(tag.name.string())
                             .unwrap()
-                            .get(&canonical_name)
+                            .get(&logical_event_name)
                         {
-                            event
+                            self.interface_delta
+                                .get(tag.name.string())
+                                .unwrap()
+                                .get(&event.0)
+                                .unwrap()
                         } else {
                             // TODO: diagnostics
                             println!(
@@ -520,7 +597,7 @@ impl<'a> AttributeAnalyzer<'a> {
                         match event {
                             ModuleMemberType::ExposedEvent {
                                 event, ..
-                            } => Some(event.clone()),
+                            } => Some(LogicalEventName(event.clone())),
                             _ => None,
                         }
                     } else {
@@ -531,7 +608,6 @@ impl<'a> AttributeAnalyzer<'a> {
                         id.as_deref(),
                         tag,
                         current_module,
-                        &canonical_name,
                         attrib,
                         exposed_event_suffix,
                     )
@@ -727,8 +803,11 @@ impl<'a> AttributeAnalyzer<'a> {
         for node in &fragment.nodes {
             if let FragmentNode::Tag(tag) = node {
                 // first, we must find the id.
-                let id = self
-                    .collect_id(&current_module.expressions, &tag.attributes);
+                let id = self.collect_id(
+                    current_module.name,
+                    &current_module.expressions,
+                    &tag.attributes,
+                );
 
                 match &tag.name.namespace {
                     Some(TagNamespace::Platform(namespace))
@@ -816,9 +895,13 @@ impl<'a> AttributeAnalyzer<'a> {
         }
 
         if let Some(root) = &root {
-            self.id_set.clear();
+            self.id_table
+                .insert(module_context.name.to_string(), HashMap::new());
 
             self.interface_delta
+                .insert(module_context.name.to_string(), HashMap::new());
+
+            self.logical_to_source_delta
                 .insert(module_context.name.to_string(), HashMap::new());
 
             // resolve attributes
